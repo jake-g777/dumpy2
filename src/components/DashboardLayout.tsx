@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Menu, X, Home, Database, Link2, Settings, ChevronDown, ChevronRight, FileUp, Globe } from 'lucide-react';
 import { X as CloseIcon } from 'lucide-react';
+import DataImporter from './DataImporter';
 
 interface DashboardLayoutProps {
   // Remove the children requirement
@@ -10,32 +11,162 @@ interface Tab {
   id: string;
   title: string;
   type: 'welcome' | 'file-import' | 'api-import';
+  fileName?: string;
+  file?: File;
+  data?: {
+    parsedData: any;
+    rawData: any;
+    originalJsonData: any;
+    availablePaths: any[];
+    selectedPath: any;
+  };
 }
+
+interface CreateProjectModalProps {
+  isOpen: boolean;
+  type: 'file' | 'api';
+  onClose: () => void;
+  onSubmit: (projectName: string, file?: File) => void;
+}
+
+const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ isOpen, type, onClose, onSubmit }) => {
+  const [projectName, setProjectName] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = () => {
+    if (type === 'file' && !selectedFile) {
+      return; // Don't submit if file is required but not selected
+    }
+    // Use file name if project name is empty, otherwise use project name
+    const finalProjectName = projectName.trim() || (selectedFile ? selectedFile.name : 'Untitled Project');
+    onSubmit(finalProjectName, selectedFile || undefined);
+    setProjectName('');
+    setSelectedFile(null);
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-[500px]">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Create New {type === 'file' ? 'File Import' : 'API Import'}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="projectName" className="block text-sm font-medium text-gray-700 mb-1">
+              Project Name
+            </label>
+            <input
+              type="text"
+              id="projectName"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter project name"
+              autoFocus
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              If left blank, the file name will be used as the project name
+            </p>
+          </div>
+
+          {type === 'file' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Select File
+              </label>
+              <div 
+                className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer
+                  ${selectedFile ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-gray-400'}`}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".csv,.txt,.json,.xlsx,.xls"
+                />
+                {selectedFile ? (
+                  <div className="text-green-700 flex items-center justify-center gap-2">
+                    <FileUp size={20} />
+                    <span>{selectedFile.name}</span>
+                  </div>
+                ) : (
+                  <div className="text-gray-500">
+                    <FileUp size={24} className="mx-auto mb-2" />
+                    <p>Click to select or drag and drop</p>
+                    <p className="text-sm">.csv, .txt, .json, .xlsx, .xls</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end space-x-2 mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!projectName.trim() || (type === 'file' && !selectedFile)}
+            className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [isActiveJobsOpen, setIsActiveJobsOpen] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: 'welcome', title: 'Welcome', type: 'welcome' }]);
   const [activeTabId, setActiveTabId] = useState('welcome');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalType, setModalType] = useState<'file' | 'api'>('file');
 
   const handleNewFileImport = () => {
-    const newTab: Tab = {
-      id: `file-import-${Date.now()}`,
-      title: 'File Import',
-      type: 'file-import'
-    };
-    setTabs([...tabs, newTab]);
-    setActiveTabId(newTab.id);
+    setModalType('file');
+    setIsModalOpen(true);
   };
 
   const handleNewApiImport = () => {
+    setModalType('api');
+    setIsModalOpen(true);
+  };
+
+  const handleCreateProject = (projectName: string, file?: File) => {
+    const finalProjectName = projectName.trim() || (file ? file.name : 'Untitled Project');
     const newTab: Tab = {
-      id: `api-import-${Date.now()}`,
-      title: 'API Import',
-      type: 'api-import'
+      id: `${modalType}-import-${Date.now()}`,
+      title: finalProjectName,
+      type: `${modalType}-import` as 'file-import' | 'api-import',
+      fileName: file?.name,
+      file: file
     };
     setTabs([...tabs, newTab]);
     setActiveTabId(newTab.id);
+    setIsModalOpen(false);
   };
 
   const handleCloseTab = (tabId: string) => {
@@ -45,11 +176,27 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
     setTabs(tabs.filter(tab => tab.id !== tabId));
   };
 
+  const updateTabFileName = (tabId: string, fileName: string) => {
+    setTabs(tabs.map(tab => 
+      tab.id === tabId 
+        ? { ...tab, title: fileName, fileName }
+        : tab
+    ));
+  };
+
+  const updateTabData = (tabId: string, data: any) => {
+    setTabs(tabs.map(tab => 
+      tab.id === tabId 
+        ? { ...tab, data }
+        : tab
+    ));
+  };
+
   const renderTabContent = (tab: Tab) => {
     switch (tab.type) {
       case 'welcome':
         return (
-          <div className="p-8 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)]">
+          <div className="p-8 flex flex-col items-center justify-center min-h-[calc(100vh-6rem)]">
             <div className="text-center">
               <h2 className="text-3xl font-bold text-gray-900">Welcome to Dumpy</h2>
               <p className="mt-2 text-gray-600">Version 1.0</p>
@@ -76,15 +223,18 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
         );
       case 'file-import':
         return (
-          <div className="p-8">
-            <h2 className="text-2xl font-semibold">File Import</h2>
-            {/* File import content will go here */}
+          <div className="flex flex-col items-center min-h-[calc(100vh-6rem)]">
+            <DataImporter 
+              onFileSelect={(fileName) => updateTabFileName(activeTabId, fileName)}
+              onDataChange={(data) => updateTabData(activeTabId, data)}
+              initialData={tab.data}
+              initialFile={tab.file}
+            />
           </div>
         );
       case 'api-import':
         return (
-          <div className="p-8">
-            <h2 className="text-2xl font-semibold">API Import</h2>
+          <div className="p-8 flex flex-col items-center justify-center min-h-[calc(100vh-6rem)]">
             {/* API import content will go here */}
           </div>
         );
@@ -191,26 +341,26 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
             )}
             
             {/* Tab Bar */}
-            <div className="flex space-x-1">
+            <div className="flex space-x-1 flex-1">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTabId(tab.id)}
-                  className={`group px-3 py-1.5 rounded-t-lg transition-colors flex items-center space-x-2 ${
+                  className={`group px-8 py-1.5 rounded-t-xl transition-colors flex items-center space-x-2 relative ${
                     activeTabId === tab.id
-                      ? 'bg-white text-black border-t border-x border-gray-200'
+                      ? 'bg-gray-200 text-black border-t border-x border-white-400 mb-[-2px]'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
                   <span>{tab.title}</span>
                   {tab.id !== 'welcome' && (
                     <CloseIcon
-                      size={14}
+                      size={16}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleCloseTab(tab.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded-full p-0.5"
+                      className="p-1 ml-9 rounded-full hover:bg-gray-100 hover:ring-1 hover:ring-gray-300 transition-all"
                     />
                   )}
                 </button>
@@ -220,10 +370,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
         </div>
 
         {/* Content Area */}
-        <div className="bg-gray-200 m-2 shadow-sm ">
-          {renderTabContent(tabs.find(tab => tab.id === activeTabId)!)}
+        <div className="bg-gray-200 flex-1">
+          <div className="px-4 h-full">
+            {renderTabContent(tabs.find(tab => tab.id === activeTabId)!)}
+          </div>
         </div>
       </div>
+
+      <CreateProjectModal
+        isOpen={isModalOpen}
+        type={modalType}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreateProject}
+      />
     </div>
   );
 };
