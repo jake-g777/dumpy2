@@ -18,7 +18,7 @@ const Banner: React.FC<BannerProps> = ({ onVisibilityChange }) => {
 
   return (
     <>
-      <div className="bg-indigo-900 text-white w-full px-4 py-2">
+      <div className="bg-indigo-900 text-white w-full px-4 py-2 fixed top-0 z-50">
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-center relative">
             <p className="text-sm font-medium text-center">

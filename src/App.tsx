@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Banner from './components/Banner';
 import SignIn from './components/SignIn';
+import DashboardLayout from './components/DashboardLayout';
 
 const HomePage: React.FC<{ isBannerVisible: boolean }> = ({ isBannerVisible }) => {
   return (
@@ -28,6 +29,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<HomePage isBannerVisible={isBannerVisible} />} />
             <Route path="/signin" element={<SignIn />} />
+            <Route path="/dashboard" element={<DashboardLayout />} />
           </Routes>
         </div>
       </ThemeProvider>

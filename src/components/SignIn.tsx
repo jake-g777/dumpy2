@@ -22,10 +22,17 @@ const SignIn: React.FC = () => {
     e.preventDefault();
     const newErrors: FormErrors = {};
     
+    // Check if the credentials match our test account
+    if (formData.email === 'test@gmail.com' && formData.password === 'password') {
+      setIsLoading(true);
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      navigate('/dashboard');
+      return;
+    }
+    
     if (!formData.email) {
       newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email';
     }
     
     if (!formData.password) {
@@ -37,19 +44,10 @@ const SignIn: React.FC = () => {
       return;
     }
 
-    // TODO: Implement your own authentication logic here
-    setIsLoading(true);
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      navigate('/');
-    } catch (error: any) {
-      setErrors({
-        general: 'Failed to sign in. Please try again.'
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    setErrors({
+      general: 'Invalid credentials. Try using test/password'
+    });
+    setIsLoading(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
