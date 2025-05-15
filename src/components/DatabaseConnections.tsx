@@ -246,7 +246,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
       {/* Header */}
       <div className="flex-none flex justify-between items-center px-6 py-3 border-b border-gray-200 bg-white">
         <h2 className="text-lg font-semibold text-gray-900">Database Connections</h2>
@@ -259,8 +259,8 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
         </button>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 bg-gray-50 overflow-hidden">
+      {/* Main Content Area - Takes remaining space with scroll */}
+      <div className="flex-1 overflow-hidden bg-gray-50">
         <div className="h-full overflow-y-auto p-6">
           <div className="max-w-4xl mx-auto">
             <div className="space-y-2">
@@ -340,8 +340,8 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
         </div>
       </div>
 
-      {/* Console - Fixed Height */}
-      <div className="flex-none border-t border-gray-200 bg-gray-900 text-white">
+      {/* Console - Fixed at bottom */}
+      <div className="flex-none h-40 border-t border-gray-200 bg-gray-900 text-white">
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
           <div className="flex items-center space-x-2">
             <AlertCircle className="w-4 h-4" />
@@ -354,7 +354,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
             Clear logs
           </button>
         </div>
-        <div className="h-32 overflow-y-auto p-2 font-mono text-sm">
+        <div className="h-[calc(10rem-2.5rem)] overflow-y-auto p-2 font-mono text-sm">
           {logs.length === 0 ? (
             <div className="text-gray-500 text-xs p-2">No connection logs yet</div>
           ) : (
