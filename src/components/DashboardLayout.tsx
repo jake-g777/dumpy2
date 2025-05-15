@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { Menu, X, Home, Database, Link2, Settings, ChevronDown, ChevronRight, FileUp, Globe } from 'lucide-react';
 import { X as CloseIcon } from 'lucide-react';
 import DataImporter from './DataImporter';
+import DatabaseConnections from './DatabaseConnections';
+import { DatabaseConnection } from './DatabaseConnections';
 
 interface DashboardLayoutProps {
   // Remove the children requirement
@@ -10,7 +12,7 @@ interface DashboardLayoutProps {
 interface Tab {
   id: string;
   title: string;
-  type: 'welcome' | 'file-import' | 'api-import';
+  type: 'welcome' | 'file-import' | 'api-import' | 'database-connections';
   fileName?: string;
   file?: File;
   data?: {
@@ -192,6 +194,22 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
     ));
   };
 
+  const handleDatabaseConnection = (connection: DatabaseConnection) => {
+    // Handle successful database connection
+    // You might want to create a new tab or update the current one
+    console.log('Connected to database:', connection);
+  };
+
+  const handleDatabaseConnectionsClick = () => {
+    const newTab: Tab = {
+      id: `database-connections-${Date.now()}`,
+      title: 'Database Connections',
+      type: 'database-connections'
+    };
+    setTabs([...tabs, newTab]);
+    setActiveTabId(newTab.id);
+  };
+
   const renderTabContent = (tab: Tab) => {
     switch (tab.type) {
       case 'welcome':
@@ -236,6 +254,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
         return (
           <div className="p-8 flex flex-col items-center justify-center min-h-[calc(100vh-6rem)]">
             {/* API import content will go here */}
+          </div>
+        );
+      case 'database-connections':
+        return (
+          <div className="flex-1 overflow-auto bg-gray-50">
+            <DatabaseConnections onConnect={handleDatabaseConnection} />
           </div>
         );
       default:
@@ -303,11 +327,11 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
             </div>
 
             <button 
-              onClick={() => setActiveTabId('connections')}
+              onClick={handleDatabaseConnectionsClick}
               className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
             >
               <Database size={20} />
-              <span>Database Connection</span>
+              <span>Database Connections</span>
             </button>
 
             <button className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md">

@@ -339,7 +339,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     }
 
     const headers = rows[headerRowIndex];
-    const dataRows = rows.filter((_, index) => index !== headerRowIndex);
+    const dataRows = rows.slice(headerRowIndex + 1);
 
     setParsedData({
       headers,
@@ -495,13 +495,6 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
           <div className="border-b border-gray-200 bg-white">
             <div className="flex items-center justify-between px-4 py-2">
               <div className="flex items-center space-x-2">
-                <button
-                  onClick={removeNullRows}
-                  className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-                >
-                  <Trash2 className="w-4 h-4 mr-1.5" />
-                  Remove Null Rows
-                </button>
                 {rawData && rawData.rows.length > 0 && (
                   <div className="relative" ref={headerMenuRef}>
                     <button
@@ -539,6 +532,13 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                     )}
                   </div>
                 )}
+                <button
+                  onClick={removeNullRows}
+                  className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+                >
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Remove Null Rows
+                </button>
               </div>
               <div className="flex items-center space-x-4">
                 {error && (
