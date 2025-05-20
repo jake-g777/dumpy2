@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
+import { ApolloProvider } from '@apollo/client';
+import { client } from './apollo/client';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Banner from './components/Banner';
@@ -49,22 +51,30 @@ const App: React.FC = () => {
 
   useEffect(() => {
     console.log('App component mounted');
+    
+    // Display startup message with addresses
+    console.log('\n🚀 Application Started\n');
+    console.log('📱 Frontend:   http://localhost:5175');
+    console.log('🔧 Backend:    http://localhost:5000/graphql');
+    console.log('💓 Health:     http://localhost:5000/health\n');
   }, []);
 
   return (
     <ErrorBoundary>
-      <Router>
-        <ThemeProvider>
-          <div className="min-h-screen bg-white">
-            <Banner onVisibilityChange={setIsBannerVisible} />
-            <Routes>
-              <Route path="/" element={<HomePage isBannerVisible={isBannerVisible} />} />
-              <Route path="/signin" element={<SignIn />} />
-              <Route path="/dashboard" element={<DashboardLayout />} />
-            </Routes>
-          </div>
-        </ThemeProvider>
-      </Router>
+      <ApolloProvider client={client}>
+        <Router>
+          <ThemeProvider>
+            <div className="min-h-screen bg-white">
+              <Banner onVisibilityChange={setIsBannerVisible} />
+              <Routes>
+                <Route path="/" element={<HomePage isBannerVisible={isBannerVisible} />} />
+                <Route path="/signin" element={<SignIn />} />
+                <Route path="/dashboard" element={<DashboardLayout />} />
+              </Routes>
+            </div>
+          </ThemeProvider>
+        </Router>
+      </ApolloProvider>
     </ErrorBoundary>
   );
 };

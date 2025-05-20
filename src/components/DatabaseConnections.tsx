@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Plus, Edit2, Trash2, Check, X, Eye, EyeOff, ChevronDown, AlertCircle } from 'lucide-react';
+import { Database, Plus, Edit2, Trash2, Check, X, Eye, EyeOff, ChevronDown, AlertCircle, ChevronUp } from 'lucide-react';
 import secureStorage from '../services/secureStorage';
 import databaseService from '../services/databaseService';
+import { useConnectionStatus } from '../hooks/useConnectionStatus';
+import { gql, useSubscription } from '@apollo/client';
+import DatabaseTables from './DatabaseTables';
 
 export interface DatabaseConnection {
   id: string;
@@ -27,10 +30,28 @@ interface LogMessage {
   connectionName?: string;
 }
 
+type ConnectionStatusType = 'untested' | 'success' | 'failed';
+
 interface ConnectionStatus {
   id: string;
-  status: 'untested' | 'success' | 'failed';
+  status: ConnectionStatusType;
   lastTested?: Date;
+  metrics?: {
+    responseTime: number;
+    activeQueries: number;
+  };
+}
+
+interface ConnectionStatusSubscription {
+  onConnectionStatusChange: {
+    status: ConnectionStatusType;
+    lastTested: string;
+    error?: string;
+    metrics?: {
+      responseTime: number;
+      activeQueries: number;
+    };
+  };
 }
 
 const DATABASE_TYPES = {
@@ -71,14 +92,31 @@ const DATABASE_TYPES = {
   }
 };
 
+const CONNECTION_STATUS_SUBSCRIPTION = gql`
+  subscription OnConnectionStatusChange($connectionId: String!) {
+    onConnectionStatusChange(connectionId: $connectionId) {
+      status
+      lastTested
+      error
+      metrics {
+        responseTime
+        activeQueries
+      }
+    }
+  }
+`;
+
 const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) => {
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [editingConnection, setEditingConnection] = useState<DatabaseConnection | null>(null);
   const [testingConnection, setTestingConnection] = useState<string | null>(null);
+  const [savingConnection, setSavingConnection] = useState(false);
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [connectionStatuses, setConnectionStatuses] = useState<ConnectionStatus[]>([]);
+  const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
+  const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
   
   const [newConnection, setNewConnection] = useState<DatabaseConnection>({
     id: '',
@@ -144,42 +182,57 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
   };
 
   const handleSaveConnection = async () => {
-    // Validate required fields
-    if (!newConnection.name || !newConnection.host || !newConnection.database) {
-      addLog('Please fill in all required fields', 'error');
-      return;
-    }
+    setSavingConnection(true);
+    try {
+      // Validate required fields
+      if (!newConnection.name || !newConnection.host || !newConnection.database) {
+        addLog('Please fill in all required fields', 'error');
+        return;
+      }
 
-    // Validate host format
-    if (newConnection.host === 'localhose') {
-      addLog('Did you mean "localhost"? Please check the hostname spelling.', 'error');
-      return;
-    }
+      // Validate host format
+      if (newConnection.host === 'localhose') {
+        addLog('Did you mean "localhost"? Please check the hostname spelling.', 'error');
+        return;
+      }
 
-    // Validate host format for common mistakes
-    if (!/^[a-zA-Z0-9.-]+$/.test(newConnection.host)) {
-      addLog('Invalid hostname format. Please use only letters, numbers, dots, and hyphens.', 'error');
-      return;
-    }
+      // Validate host format for common mistakes
+      if (!/^[a-zA-Z0-9.-]+$/.test(newConnection.host)) {
+        addLog('Invalid hostname format. Please use only letters, numbers, dots, and hyphens.', 'error');
+        return;
+      }
 
-    if (editingConnection) {
-      // Update existing connection
-      setConnections(connections.map(conn => 
-        conn.id === editingConnection.id ? newConnection : conn
-      ));
-      addLog(`Connection "${newConnection.name}" updated successfully`, 'success');
-    } else {
-      // Add new connection with untested status
-      const connection = {
-        ...newConnection,
-        id: Date.now().toString()
-      };
-      setConnections([...connections, connection]);
-      setConnectionStatuses(prev => [...prev, { id: connection.id, status: 'untested' }]);
-      addLog(`Connection "${connection.name}" added successfully`, 'success');
-    }
+      // Validate port number
+      const portNum = parseInt(newConnection.port);
+      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+        addLog('Invalid port number. Please enter a number between 1 and 65535.', 'error');
+        return;
+      }
 
-    handleCloseModal();
+      if (editingConnection) {
+        // Update existing connection
+        setConnections(connections.map(conn => 
+          conn.id === editingConnection.id ? newConnection : conn
+        ));
+        addLog(`Connection "${newConnection.name}" updated successfully`, 'success');
+      } else {
+        // Add new connection with untested status
+        const connection = {
+          ...newConnection,
+          id: Date.now().toString()
+        };
+        setConnections([...connections, connection]);
+        setConnectionStatuses(prev => [...prev, { id: connection.id, status: 'untested' }]);
+        addLog(`Connection "${connection.name}" added successfully`, 'success');
+      }
+
+      handleCloseModal();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      addLog(`Failed to save connection: ${errorMessage}`, 'error');
+    } finally {
+      setSavingConnection(false);
+    }
   };
 
   const handleTypeChange = (type: DatabaseConnection['type']) => {
@@ -210,7 +263,11 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     addLog(`Testing connection to ${connection.name}...`, 'info', connection.name);
     
     try {
-      const success = await databaseService.testConnection(connection);
+      const { data } = await databaseService.testConnection(connection);
+      const success = data.testConnection.success;
+      const message = data.testConnection.message;
+      const details = data.testConnection.details;
+      
       setConnectionStatuses(prev => prev.map(status => 
         status.id === connection.id 
           ? { id: connection.id, status: success ? 'success' : 'failed', lastTested: new Date() }
@@ -219,8 +276,14 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       
       if (success) {
         addLog(`Successfully connected to ${connection.name}`, 'success', connection.name);
+        if (details) {
+          addLog(details, 'info', connection.name);
+        }
       } else {
-        addLog(`Failed to connect to ${connection.name}. Please check your connection details.`, 'error', connection.name);
+        addLog(`Failed to connect to ${connection.name}: ${message}`, 'error', connection.name);
+        if (details) {
+          addLog(details, 'error', connection.name);
+        }
       }
     } catch (error) {
       setConnectionStatuses(prev => prev.map(status => 
@@ -245,10 +308,59 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     });
   };
 
+  const { data: subscriptionData, error: subscriptionError } = useSubscription<ConnectionStatusSubscription>(
+    CONNECTION_STATUS_SUBSCRIPTION,
+    {
+      variables: {
+        connectionId: editingConnection?.id ?? '',
+      },
+      skip: !editingConnection,
+      onData: ({ data }) => {
+        if (data?.data?.onConnectionStatusChange) {
+          const subscriptionData = data.data.onConnectionStatusChange;
+          setConnectionStatuses((prev) =>
+            prev.map((status) =>
+              status.id === editingConnection?.id
+                ? {
+                    id: editingConnection.id,
+                    status: subscriptionData.status as ConnectionStatusType,
+                    lastTested: new Date(subscriptionData.lastTested),
+                    metrics: subscriptionData.metrics,
+                  }
+                : status
+            )
+          );
+        }
+      },
+      onError: (error) => {
+        console.error('Subscription error:', error);
+        addLog(`Subscription error: ${error.message}`, 'error');
+      },
+      onComplete: () => {
+        console.log('Subscription completed');
+      },
+    }
+  );
+
+  // Add error handling for subscription errors
+  useEffect(() => {
+    if (subscriptionError) {
+      console.error('Subscription error:', subscriptionError);
+      addLog(`Subscription error: ${subscriptionError.message}`, 'error');
+    }
+  }, [subscriptionError]);
+
+  // Cleanup subscription when component unmounts or editing connection changes
+  useEffect(() => {
+    return () => {
+      // Cleanup will be handled by Apollo Client
+    };
+  }, [editingConnection?.id]);
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      {/* Header */}
-      <div className="flex-none flex justify-between items-center px-6 py-3 border-b border-gray-200 bg-white">
+    <div className="flex flex-col h-[calc(100vh-5rem)] overflow-hidden">
+      {/* Header - Fixed height */}
+      <div className="flex-none flex justify-between items-center px-6 py-1.5 border-b border-gray-200 bg-white">
         <h2 className="text-lg font-semibold text-gray-900">Database Connections</h2>
         <button
           onClick={() => setShowModal(true)}
@@ -259,14 +371,14 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
         </button>
       </div>
 
-      {/* Main Content Area - Takes remaining space with scroll */}
-      <div className="flex-1 overflow-hidden bg-gray-50">
-        <div className="h-full overflow-y-auto p-6">
+      {/* Main Content Area - Scrollable with bottom margin for console */}
+      <div className="flex-1 min-h-0 bg-gray-50">
+        <div className={`h-full overflow-y-auto p-3 ${isConsoleCollapsed ? 'pb-8' : 'pb-80'}`}>
           <div className="max-w-4xl mx-auto">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {connections.length === 0 ? (
-                <div className="text-center py-12">
-                  <Database className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <div className="text-center py-6">
+                  <Database className="w-12 h-12 text-gray-400 mx-auto mb-2" />
                   <p className="text-gray-500">No database connections yet</p>
                   <p className="text-sm text-gray-400">Click "Add Connection" to get started</p>
                 </div>
@@ -276,7 +388,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                   return (
                     <div
                       key={connection.id}
-                      className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-sm transition-shadow relative"
+                      className="bg-white rounded-lg border border-gray-200 p-2.5 hover:shadow-sm transition-shadow relative"
                     >
                       {/* Status Indicator */}
                       <div className="absolute top-4 right-4">
@@ -318,6 +430,16 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                             {testingConnection === connection.id ? 'Testing...' : 'Test'}
                           </button>
                           <button
+                            onClick={() => setSelectedConnection(selectedConnection === connection.id ? null : connection.id)}
+                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                              selectedConnection === connection.id
+                                ? 'bg-gray-100 text-gray-900'
+                                : 'text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            {selectedConnection === connection.id ? 'Hide Tables' : 'Show Tables'}
+                          </button>
+                          <button
                             onClick={() => handleEditClick(connection)}
                             className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
                           >
@@ -331,6 +453,11 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                           </button>
                         </div>
                       </div>
+                      {selectedConnection === connection.id && status?.status === 'success' && (
+                        <div className="mt-4 border-t border-gray-200 pt-4">
+                          <DatabaseTables connectionId={connection.id} />
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -340,50 +467,64 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
         </div>
       </div>
 
-      {/* Console - Fixed at bottom */}
-      <div className="flex-none h-40 border-t border-gray-200 bg-gray-900 text-white">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+      {/* Console - Fixed at bottom with drawer offset */}
+      <div className={`flex-none border-t border-gray-200 bg-gray-900 text-white transition-all duration-200 ${isConsoleCollapsed ? 'h-8' : 'h-80'}`}>
+        <div className="flex items-center justify-between px-4 py-1 border-b border-gray-700">
           <div className="flex items-center space-x-2">
             <AlertCircle className="w-4 h-4" />
             <span className="text-sm font-medium">Connection Logs</span>
           </div>
-          <button
-            onClick={() => setLogs([])}
-            className="text-xs text-gray-400 hover:text-white transition-colors"
-          >
-            Clear logs
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setLogs([])}
+              className="text-xs text-gray-400 hover:text-white transition-colors"
+            >
+              Clear logs
+            </button>
+            <button
+              onClick={() => setIsConsoleCollapsed(!isConsoleCollapsed)}
+              className="p-1 hover:bg-gray-800 rounded transition-colors"
+            >
+              {isConsoleCollapsed ? (
+                <ChevronUp className="w-4 h-4 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-400" />
+              )}
+            </button>
+          </div>
         </div>
-        <div className="h-[calc(10rem-2.5rem)] overflow-y-auto p-2 font-mono text-sm">
-          {logs.length === 0 ? (
-            <div className="text-gray-500 text-xs p-2">No connection logs yet</div>
-          ) : (
-            <div className="space-y-1">
-              {logs.map(log => (
-                <div
-                  key={log.id}
-                  className={`px-2 py-1 rounded ${
-                    log.type === 'error' ? 'text-red-400' :
-                    log.type === 'success' ? 'text-green-400' :
-                    'text-gray-300'
-                  }`}
-                >
-                  <span className="text-gray-500">[{formatTimestamp(log.timestamp)}]</span>
-                  {log.connectionName && (
-                    <span className="text-gray-400"> ({log.connectionName})</span>
-                  )}
-                  : {log.message}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {!isConsoleCollapsed && (
+          <div className="h-[calc(20rem-2rem)] overflow-y-auto p-1.5 font-mono text-sm">
+            {logs.length === 0 ? (
+              <div className="text-gray-500 text-xs p-1.5">No connection logs yet</div>
+            ) : (
+              <div className="space-y-0.5">
+                {logs.map(log => (
+                  <div
+                    key={log.id}
+                    className={`px-2 py-0.5 rounded ${
+                      log.type === 'error' ? 'text-red-400' :
+                      log.type === 'success' ? 'text-green-400' :
+                      'text-gray-300'
+                    }`}
+                  >
+                    <span className="text-gray-500">[{formatTimestamp(log.timestamp)}]</span>
+                    {log.connectionName && (
+                      <span className="text-gray-400"> ({log.connectionName})</span>
+                    )}
+                    : {log.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Add/Edit Connection Modal */}
+      {/* Modal - Fixed position with internal scroll if needed */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-[500px]">
+          <div className="bg-white rounded-lg p-6 w-[500px] max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-semibold">
                 {editingConnection ? 'Edit Database Connection' : 'Add Database Connection'}
@@ -545,14 +686,18 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
               <button
                 onClick={handleCloseModal}
                 className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+                disabled={savingConnection}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveConnection}
-                className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-900"
+                className={`px-4 py-2 bg-black text-white rounded-md hover:bg-gray-900 ${
+                  savingConnection ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                disabled={savingConnection}
               >
-                {editingConnection ? 'Save Changes' : 'Add Connection'}
+                {savingConnection ? 'Saving...' : editingConnection ? 'Save Changes' : 'Add Connection'}
               </button>
             </div>
           </div>

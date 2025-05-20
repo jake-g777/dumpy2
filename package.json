@@ -5,7 +5,9 @@
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"vite\" \"powershell ./start-server.ps1\"",
+    "dev:frontend": "echo '=== Frontend Server ===\nURL: http://localhost:5173\n==================' && vite",
+    "dev:backend": "powershell ./start-server.ps1",
     "dev:server": "cd server && npx nodemon src/server.ts",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "build": "tsc && vite build",
@@ -16,6 +18,7 @@
     "electron:preview": "npm run build && electron ."
   },
   "dependencies": {
+    "@apollo/client": "^3.13.8",
     "@types/animejs": "^3.1.13",
     "@types/cors": "^2.8.18",
     "@types/crypto-js": "^4.2.2",
@@ -30,6 +33,8 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "firebase": "^11.7.1",
+    "graphql": "^16.11.0",
+    "graphql-ws": "^6.0.5",
     "knex": "^3.1.0",
     "lucide-react": "^0.344.0",
     "mysql2": "^3.14.1",

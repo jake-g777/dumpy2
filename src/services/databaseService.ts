@@ -1,34 +1,52 @@
 import { DatabaseConnection } from '../components/DatabaseConnections';
+import { gql } from '@apollo/client';
+import { client } from '../apollo/client';
 
-// Get the API URL from environment variables or use a default
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+// Update the API base URL to point to your C# backend
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5172/api';
+
+const TEST_CONNECTION = gql`
+  mutation TestConnection($type: String!, $connection: DatabaseConnectionInput!) {
+    testConnection(type: $type, connection: $connection) {
+      success
+      message
+      details
+    }
+  }
+`;
 
 class DatabaseService {
-  async testConnection(connection: DatabaseConnection): Promise<boolean> {
+  async testConnection(connection: DatabaseConnection) {
+    console.log('Testing connection to:', {
+      type: connection.type,
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      username: connection.username,
+      // Don't log the password for security
+    });
+    
     try {
-      console.log('Attempting connection to:', `${API_BASE_URL}/${connection.type}/test-connection`);
-      console.log('Connection details:', { ...connection, password: '***' });
-      
-      const response = await fetch(`${API_BASE_URL}/${connection.type}/test-connection`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(connection),
+      const response = await client.mutate({
+        mutation: TEST_CONNECTION,
+        variables: {
+          type: connection.type,
+          connection: {
+            host: connection.host,
+            port: connection.port,
+            database: connection.database,
+            username: connection.username,
+            password: connection.password,
+            ssl: connection.ssl
+          }
+        }
       });
-
-      console.log('Response status:', response.status);
-      const data = await response.json();
-      console.log('Response data:', data);
       
-      return data.success;
-    } catch (error: any) {
-      console.error('Connection test failed:', error);
-      console.error('Full error details:', {
-        message: error?.message || 'Unknown error',
-        stack: error?.stack || 'No stack trace available',
-      });
-      return false;
+      console.log('Connection test response:', response);
+      return response;
+    } catch (error) {
+      console.error('Connection test error:', error);
+      throw error;
     }
   }
 
