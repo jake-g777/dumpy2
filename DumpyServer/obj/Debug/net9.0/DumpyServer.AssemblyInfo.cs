@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("DumpyServer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5b1092c858c280ac35595b41bc08824d38c176db")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0ca8146f738ebf259fa614d26f40629a7542ca05")]
 [assembly: System.Reflection.AssemblyProductAttribute("DumpyServer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DumpyServer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

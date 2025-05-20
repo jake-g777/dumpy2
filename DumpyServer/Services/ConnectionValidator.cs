@@ -25,4 +25,13 @@ public class ConnectionValidator
 
         return (true, null);
     }
+
+    public bool ValidatePort(string port)
+    {
+        if (int.TryParse(port, out int portNumber))
+        {
+            return portNumber >= 0 && portNumber <= 65535;
+        }
+        return false;
+    }
 } 

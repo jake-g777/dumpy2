@@ -19,9 +19,11 @@ const port = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:5177'],
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
+  origin: ['http://localhost:3000', 'http://localhost:5172', 'http://localhost:5174'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 app.use(json());
 
@@ -249,6 +251,9 @@ app.use((req: Request, res: Response) => {
     message: `Cannot ${req.method} ${req.path}`
   });
 });
+
+// Add preflight handler for all routes
+app.options('*', cors());
 
 // Start server with a nice welcome message
 app.listen(port, () => {

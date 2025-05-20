@@ -1,70 +1,65 @@
-import { DatabaseConnection } from '../components/DatabaseConnections';
-import { gql } from '@apollo/client';
-import { client } from '../apollo/client';
+import { DatabaseConnection, DatabaseConnectionInput } from '../components/DatabaseConnections';
 
 // Update the API base URL to point to your C# backend
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5172/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5176/api';
 
-const TEST_CONNECTION = gql`
-  mutation TestConnection($type: String!, $connection: DatabaseConnectionInput!) {
-    testConnection(type: $type, connection: $connection) {
-      success
-      message
-      details
-    }
-  }
-`;
+interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+  details: string;
+}
 
 class DatabaseService {
-  async testConnection(connection: DatabaseConnection) {
-    console.log('Testing connection to:', {
-      type: connection.type,
-      host: connection.host,
-      port: connection.port,
-      database: connection.database,
-      username: connection.username,
-      // Don't log the password for security
-    });
-    
+  async testConnection(connection: DatabaseConnectionInput): Promise<ConnectionTestResult> {
     try {
-      const response = await client.mutate({
-        mutation: TEST_CONNECTION,
-        variables: {
-          type: connection.type,
-          connection: {
-            host: connection.host,
-            port: connection.port,
-            database: connection.database,
-            username: connection.username,
-            password: connection.password,
-            ssl: connection.ssl
-          }
-        }
+      const response = await fetch(`${API_BASE_URL}/database/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(connection),
       });
+
+      const data = await response.json();
       
-      console.log('Connection test response:', response);
-      return response;
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to test connection');
+      }
+
+      return data;
     } catch (error) {
-      console.error('Connection test error:', error);
+      console.error('Test connection error:', error);
       throw error;
     }
   }
 
-  async query(connection: DatabaseConnection, query: string, params: any[] = []): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/${connection.type}/query`, {
+  async query(connection: DatabaseConnection, query: string, params: any[] = []) {
+    const response = await fetch(`${API_BASE_URL}/database/query`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ connection, query, params }),
+      body: JSON.stringify({ 
+        connection: {
+          type: connection.type,
+          host: connection.host,
+          port: connection.port,
+          database: connection.database,
+          username: connection.username,
+          password: connection.password,
+          ssl: connection.ssl
+        },
+        query,
+        params 
+      }),
     });
 
     const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.error);
+    if (!response.ok) {
+      throw new Error(data.error || 'Query failed');
     }
 
-    return data.rows;
+    return data;
   }
 
   async disconnect(connection: DatabaseConnection): Promise<void> {

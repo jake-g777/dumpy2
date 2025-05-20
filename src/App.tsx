@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
-import { ApolloProvider } from '@apollo/client';
-import { client } from './apollo/client';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import Banner from './components/Banner';
 import SignIn from './components/SignIn';
 import DashboardLayout from './components/DashboardLayout';
+import DatabaseConnections from './components/DatabaseConnections';
 
 const HomePage: React.FC<{ isBannerVisible: boolean }> = ({ isBannerVisible }) => {
   useEffect(() => {
@@ -61,20 +60,19 @@ const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <ApolloProvider client={client}>
-        <Router>
-          <ThemeProvider>
-            <div className="min-h-screen bg-white">
-              <Banner onVisibilityChange={setIsBannerVisible} />
-              <Routes>
-                <Route path="/" element={<HomePage isBannerVisible={isBannerVisible} />} />
-                <Route path="/signin" element={<SignIn />} />
-                <Route path="/dashboard" element={<DashboardLayout />} />
-              </Routes>
-            </div>
-          </ThemeProvider>
-        </Router>
-      </ApolloProvider>
+      <Router>
+        <ThemeProvider>
+          <div className="min-h-screen bg-white">
+            <Banner onVisibilityChange={setIsBannerVisible} />
+            <Routes>
+              <Route path="/" element={<HomePage isBannerVisible={isBannerVisible} />} />
+              <Route path="/signin" element={<SignIn />} />
+              <Route path="/dashboard" element={<DashboardLayout />} />
+            </Routes>
+            <DatabaseConnections onConnect={() => {}} />
+          </div>
+        </ThemeProvider>
+      </Router>
     </ErrorBoundary>
   );
 };

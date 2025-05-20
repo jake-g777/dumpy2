@@ -18,7 +18,6 @@
     "electron:preview": "npm run build && electron ."
   },
   "dependencies": {
-    "@apollo/client": "^3.13.8",
     "@types/animejs": "^3.1.13",
     "@types/cors": "^2.8.18",
     "@types/crypto-js": "^4.2.2",
@@ -26,6 +25,7 @@
     "@types/papaparse": "^5.3.16",
     "@types/pg": "^8.15.2",
     "@types/react-router-dom": "^5.3.3",
+    "@types/swagger-ui-express": "^4.1.8",
     "@types/xlsx": "^0.0.35",
     "animejs": "^4.0.2",
     "cors": "^2.8.5",
@@ -33,7 +33,6 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "firebase": "^11.7.1",
-    "graphql": "^16.11.0",
     "graphql-ws": "^6.0.5",
     "knex": "^3.1.0",
     "lucide-react": "^0.344.0",
@@ -46,6 +45,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.6.0",
+    "swagger-ui-express": "^5.0.1",
     "ts-node": "^10.9.2",
     "xlsx": "^0.18.5"
   },

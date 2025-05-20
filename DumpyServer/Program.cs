@@ -1,13 +1,6 @@
 using DumpyServer.Services;
-using DumpyServer.GraphQL.Mutations;
-using DumpyServer.GraphQL.Subscriptions;
-using DumpyServer.GraphQL.Types;
-using DumpyServer.GraphQL.Queries;
-using HotChocolate.AspNetCore;
 using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
-using Swashbuckle.AspNetCore.Swagger;
-using DumpyServer.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,12 +12,14 @@ builder.Services.AddSwaggerGen();
 // Configure CORS
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5175") // Frontend URL
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        policy.WithOrigins(
+            "http://localhost:5174",  // Add your current frontend port
+            "http://localhost:5175"   // Keep existing port
+        )
+        .AllowAnyMethod()
+        .AllowAnyHeader();
     });
 });
 
@@ -36,34 +31,12 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-// Configure rate limiting
-builder.Services.AddRateLimiter(options =>
-{
-    options.AddFixedWindowLimiter("fixed", options =>
-    {
-        options.PermitLimit = 100;
-        options.Window = TimeSpan.FromMinutes(1);
-        options.QueueLimit = 2;
-    });
-});
-
 // Register services
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IDatabaseConnectionManager, DatabaseConnectionManager>();
 builder.Services.AddSingleton<IEncryptionService, EncryptionService>();
 builder.Services.AddSingleton<ILoggingService, LoggingService>();
-
-// Configure GraphQL
-builder.Services
-    .AddGraphQLServer()
-    .AddQueryType<DatabaseQueries>()
-    .AddMutationType<DatabaseMutations>()
-    .AddSubscriptionType<DatabaseSubscriptions>()
-    .AddType<DatabaseConnectionType>()
-    .AddType<DatabaseConnectionInputType>()
-    .AddType<ConnectionResultType>()
-    .AddType<QueryResultType>()
-    .AddInMemorySubscriptions();
+builder.Services.AddSingleton<DatabaseConnectionHandlerFactory>();
 
 var app = builder.Build();
 
@@ -75,19 +48,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors(); // Add CORS middleware
+app.UseCors("AllowFrontend");
 app.UseAuthorization();
-app.UseRateLimiter();
 
-// Configure GraphQL endpoints
-app.MapGraphQL()
-   .WithOptions(new GraphQLServerOptions
-   {
-       Tool = { Enable = true },
-       EnableSchemaRequests = true,
-       EnableGetRequests = true,
-       EnableMultipartRequests = true
-   });
+app.MapControllers();
 
 app.Run();
 
@@ -101,9 +65,3 @@ app.Run();
 //     string Password,
 //     bool Ssl = true
 // );
-
-public record QueryRequest(
-    DatabaseConnection Connection,
-    string Query,
-    object[] Params
-);

@@ -3,19 +3,25 @@ import { Database, Plus, Edit2, Trash2, Check, X, Eye, EyeOff, ChevronDown, Aler
 import secureStorage from '../services/secureStorage';
 import databaseService from '../services/databaseService';
 import { useConnectionStatus } from '../hooks/useConnectionStatus';
-import { gql, useSubscription } from '@apollo/client';
 import DatabaseTables from './DatabaseTables';
 
-export interface DatabaseConnection {
-  id: string;
-  name: string;
+export interface DatabaseConnectionInput {
   type: 'mysql' | 'postgresql' | 'mongodb' | 'sqlserver' | 'oracle';
   host: string;
-  port: string;
+  port: number;
   database: string;
   username: string;
   password: string;
   ssl: boolean;
+}
+
+export interface DatabaseConnection extends DatabaseConnectionInput {
+  id: string;
+  name: string;
+}
+
+export interface DatabaseConnectionFormState extends DatabaseConnectionInput {
+  name: string;
 }
 
 interface DatabaseConnectionsProps {
@@ -42,69 +48,43 @@ interface ConnectionStatus {
   };
 }
 
-interface ConnectionStatusSubscription {
-  onConnectionStatusChange: {
-    status: ConnectionStatusType;
-    lastTested: string;
-    error?: string;
-    metrics?: {
-      responseTime: number;
-      activeQueries: number;
-    };
-  };
-}
-
 const DATABASE_TYPES = {
   mysql: {
     name: 'MySQL',
-    defaultPort: '3306',
+    defaultPort: 3306,
     hostPlaceholder: 'localhost or 127.0.0.1',
     databasePlaceholder: 'my_database',
     icon: '🐬'
   },
   postgresql: {
     name: 'PostgreSQL',
-    defaultPort: '5432',
+    defaultPort: 5432,
     hostPlaceholder: 'localhost or 127.0.0.1',
     databasePlaceholder: 'postgres',
     icon: '🐘'
   },
   mongodb: {
     name: 'MongoDB',
-    defaultPort: '27017',
+    defaultPort: 27017,
     hostPlaceholder: 'localhost or mongodb://localhost',
     databasePlaceholder: 'admin',
     icon: '🍃'
   },
   sqlserver: {
     name: 'SQL Server',
-    defaultPort: '1433',
+    defaultPort: 1433,
     hostPlaceholder: 'localhost or server\\instance',
     databasePlaceholder: 'master',
     icon: '💠'
   },
   oracle: {
     name: 'Oracle',
-    defaultPort: '1521',
+    defaultPort: 1521,
     hostPlaceholder: 'localhost or oracle.example.com',
     databasePlaceholder: 'ORCL',
     icon: '⭕'
   }
 };
-
-const CONNECTION_STATUS_SUBSCRIPTION = gql`
-  subscription OnConnectionStatusChange($connectionId: String!) {
-    onConnectionStatusChange(connectionId: $connectionId) {
-      status
-      lastTested
-      error
-      metrics {
-        responseTime
-        activeQueries
-      }
-    }
-  }
-`;
 
 const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) => {
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
@@ -118,16 +98,15 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
   
-  const [newConnection, setNewConnection] = useState<DatabaseConnection>({
-    id: '',
-    name: '',
-    type: 'mysql',
+  const [newConnection, setNewConnection] = useState<DatabaseConnectionFormState>({
+    type: 'mysql' as const,
     host: '',
     port: DATABASE_TYPES.mysql.defaultPort,
     database: '',
     username: '',
     password: '',
-    ssl: true
+    ssl: true,
+    name: ''
   });
 
   // Load connections from secure storage on mount
@@ -162,15 +141,14 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     setShowModal(false);
     setEditingConnection(null);
     setNewConnection({
-      id: '',
-      name: '',
-      type: 'mysql',
+      type: 'mysql' as const,
       host: '',
       port: DATABASE_TYPES.mysql.defaultPort,
       database: '',
       username: '',
       password: '',
-      ssl: true
+      ssl: true,
+      name: ''
     });
   };
 
@@ -203,7 +181,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       }
 
       // Validate port number
-      const portNum = parseInt(newConnection.port);
+      const portNum = newConnection.port;
       if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
         addLog('Invalid port number. Please enter a number between 1 and 65535.', 'error');
         return;
@@ -212,14 +190,15 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       if (editingConnection) {
         // Update existing connection
         setConnections(connections.map(conn => 
-          conn.id === editingConnection.id ? newConnection : conn
+          conn.id === editingConnection.id ? { ...conn, ...newConnection } : conn
         ));
         addLog(`Connection "${newConnection.name}" updated successfully`, 'success');
       } else {
         // Add new connection with untested status
         const connection = {
           ...newConnection,
-          id: Date.now().toString()
+          id: Date.now().toString(),
+          name: newConnection.name
         };
         setConnections([...connections, connection]);
         setConnectionStatuses(prev => [...prev, { id: connection.id, status: 'untested' }]);
@@ -258,43 +237,49 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     setLogs(prev => [newLog, ...prev].slice(0, 50)); // Keep last 50 logs
   };
 
-  const handleTestConnection = async (connection: DatabaseConnection) => {
-    setTestingConnection(connection.id);
-    addLog(`Testing connection to ${connection.name}...`, 'info', connection.name);
-    
+  const handleTestConnection = async () => {
     try {
-      const { data } = await databaseService.testConnection(connection);
-      const success = data.testConnection.success;
-      const message = data.testConnection.message;
-      const details = data.testConnection.details;
-      
-      setConnectionStatuses(prev => prev.map(status => 
-        status.id === connection.id 
-          ? { id: connection.id, status: success ? 'success' : 'failed', lastTested: new Date() }
-          : status
-      ));
-      
-      if (success) {
-        addLog(`Successfully connected to ${connection.name}`, 'success', connection.name);
-        if (details) {
-          addLog(details, 'info', connection.name);
-        }
+      // Validate required fields
+      if (!newConnection.host) {
+        addLog('Host is required', 'error');
+        return;
+      }
+      if (!newConnection.database) {
+        addLog('Database name is required', 'error');
+        return;
+      }
+      if (!newConnection.username) {
+        addLog('Username is required', 'error');
+        return;
+      }
+      if (!newConnection.password) {
+        addLog('Password is required', 'error');
+        return;
+      }
+
+      console.log('Testing connection with:', {
+        ...newConnection,
+        password: '***'
+      });
+
+      const result = await databaseService.testConnection({
+        type: newConnection.type,
+        host: newConnection.host,
+        port: newConnection.port,
+        database: newConnection.database,
+        username: newConnection.username,
+        password: newConnection.password,
+        ssl: newConnection.ssl
+      });
+
+      if (result?.success) {
+        addLog(`Successfully connected to ${newConnection.name || 'database'}`, 'success');
       } else {
-        addLog(`Failed to connect to ${connection.name}: ${message}`, 'error', connection.name);
-        if (details) {
-          addLog(details, 'error', connection.name);
-        }
+        addLog(`Connection failed: ${result?.message}`, 'error');
       }
     } catch (error) {
-      setConnectionStatuses(prev => prev.map(status => 
-        status.id === connection.id 
-          ? { id: connection.id, status: 'failed', lastTested: new Date() }
-          : status
-      ));
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      addLog(`Connection error for ${connection.name}: ${errorMessage}`, 'error', connection.name);
-    } finally {
-      setTestingConnection(null);
+      console.error('Error testing connection:', error);
+      addLog(`Connection error: ${error instanceof Error ? error.message : String(error)}`, 'error');
     }
   };
 
@@ -307,55 +292,6 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       second: '2-digit'
     });
   };
-
-  const { data: subscriptionData, error: subscriptionError } = useSubscription<ConnectionStatusSubscription>(
-    CONNECTION_STATUS_SUBSCRIPTION,
-    {
-      variables: {
-        connectionId: editingConnection?.id ?? '',
-      },
-      skip: !editingConnection,
-      onData: ({ data }) => {
-        if (data?.data?.onConnectionStatusChange) {
-          const subscriptionData = data.data.onConnectionStatusChange;
-          setConnectionStatuses((prev) =>
-            prev.map((status) =>
-              status.id === editingConnection?.id
-                ? {
-                    id: editingConnection.id,
-                    status: subscriptionData.status as ConnectionStatusType,
-                    lastTested: new Date(subscriptionData.lastTested),
-                    metrics: subscriptionData.metrics,
-                  }
-                : status
-            )
-          );
-        }
-      },
-      onError: (error) => {
-        console.error('Subscription error:', error);
-        addLog(`Subscription error: ${error.message}`, 'error');
-      },
-      onComplete: () => {
-        console.log('Subscription completed');
-      },
-    }
-  );
-
-  // Add error handling for subscription errors
-  useEffect(() => {
-    if (subscriptionError) {
-      console.error('Subscription error:', subscriptionError);
-      addLog(`Subscription error: ${subscriptionError.message}`, 'error');
-    }
-  }, [subscriptionError]);
-
-  // Cleanup subscription when component unmounts or editing connection changes
-  useEffect(() => {
-    return () => {
-      // Cleanup will be handled by Apollo Client
-    };
-  }, [editingConnection?.id]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] overflow-hidden">
@@ -419,7 +355,45 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                         </div>
                         <div className="flex items-center space-x-2">
                           <button
-                            onClick={() => handleTestConnection(connection)}
+                            onClick={async () => {
+                              try {
+                                setTestingConnection(connection.id); // Show testing state
+                                console.log('Test button clicked, connection:', {
+                                  ...connection,
+                                  password: '***'
+                                });
+                                
+                                const result = await databaseService.testConnection({
+                                  type: connection.type,
+                                  host: connection.host,
+                                  port: connection.port,
+                                  database: connection.database,
+                                  username: connection.username,
+                                  password: connection.password,
+                                  ssl: connection.ssl
+                                });
+
+                                if (result?.success) {
+                                  addLog(`Successfully connected to ${connection.name}`, 'success');
+                                  setConnectionStatuses(prev => 
+                                    prev.map(s => s.id === connection.id ? { ...s, status: 'success' as const } : s)
+                                  );
+                                } else {
+                                  addLog(`Connection failed: ${result?.message}`, 'error');
+                                  setConnectionStatuses(prev => 
+                                    prev.map(s => s.id === connection.id ? { ...s, status: 'failed' as const } : s)
+                                  );
+                                }
+                              } catch (error) {
+                                console.error('Test connection error:', error);
+                                addLog(`Connection error: ${error instanceof Error ? error.message : String(error)}`, 'error');
+                                setConnectionStatuses(prev => 
+                                  prev.map(s => s.id === connection.id ? { ...s, status: 'failed' as const } : s)
+                                );
+                              } finally {
+                                setTestingConnection(null); // Clear testing state
+                              }
+                            }}
                             className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                               testingConnection === connection.id
                                 ? 'text-gray-400 cursor-not-allowed'
@@ -455,7 +429,10 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                       </div>
                       {selectedConnection === connection.id && status?.status === 'success' && (
                         <div className="mt-4 border-t border-gray-200 pt-4">
-                          <DatabaseTables connectionId={connection.id} />
+                          <DatabaseTables 
+                            connectionId={connection.id} 
+                            connection={connection}
+                          />
                         </div>
                       )}
                     </div>
@@ -581,7 +558,10 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <input
                   type="text"
                   value={newConnection.host}
-                  onChange={(e) => setNewConnection({ ...newConnection, host: e.target.value })}
+                  onChange={(e) => {
+                    console.log('Setting host:', e.target.value);
+                    setNewConnection({ ...newConnection, host: e.target.value });
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={DATABASE_TYPES[newConnection.type].hostPlaceholder}
                 />
@@ -598,9 +578,12 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <input
                   type="text"
                   value={newConnection.port}
-                  onChange={(e) => setNewConnection({ ...newConnection, port: e.target.value })}
+                  onChange={(e) => setNewConnection({ 
+                    ...newConnection, 
+                    port: parseInt(e.target.value) || DATABASE_TYPES[newConnection.type].defaultPort 
+                  })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={DATABASE_TYPES[newConnection.type].defaultPort}
+                  placeholder={String(DATABASE_TYPES[newConnection.type].defaultPort)}
                 />
               </div>
 
