@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Database, Plus, Edit2, Trash2, Check, X, Eye, EyeOff, ChevronDown, AlertCircle, ChevronUp, ChevronRight, Table } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Database, Plus, Edit2, Trash2, X, Eye, EyeOff, ChevronDown, AlertCircle, ChevronUp, ChevronRight, Table, Copy, History } from 'lucide-react';
 import secureStorage from '../services/secureStorage';
 import databaseService from '../services/databaseService';
-import { useConnectionStatus } from '../hooks/useConnectionStatus';
-import DatabaseTables from './DatabaseTables';
 
 export interface DatabaseConnectionInput {
   type: 'mysql' | 'postgresql' | 'mongodb' | 'sqlserver' | 'oracle';
@@ -109,12 +107,12 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [connectionStatuses, setConnectionStatuses] = useState<ConnectionStatus[]>([]);
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
-  const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
-  const [selectedConnectionForTables, setSelectedConnectionForTables] = useState<string | null>(null);
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set());
   const [expandedDatabases, setExpandedDatabases] = useState<Set<string>>(new Set());
   const [databaseInfo, setDatabaseInfo] = useState<Record<string, DatabaseInfo[]>>({});
   const [loadingDatabases, setLoadingDatabases] = useState<Set<string>>(new Set());
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const sqlPreviewRef = useRef<HTMLDivElement>(null);
   
   const [newConnection, setNewConnection] = useState<DatabaseConnectionFormState>({
     type: 'mysql' as const,
@@ -256,6 +254,12 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
           setConnectionStatuses(prev => 
             prev.map(s => s.id === connectionId ? { ...s, status: 'success' as const } : s)
           );
+          onConnect({
+            ...newConnection,
+            id: connectionId,
+            name: newConnection.name,
+            database: newConnection.showAllDatabases ? 'mysql' : newConnection.database
+          });
         } else {
           addLog(`Connection failed: ${result?.message}`, 'error');
           setConnectionStatuses(prev => 
@@ -300,52 +304,6 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       connectionName
     };
     setLogs(prev => [newLog, ...prev].slice(0, 50)); // Keep last 50 logs
-  };
-
-  const handleTestConnection = async () => {
-    try {
-      // Validate required fields
-      if (!newConnection.host) {
-        addLog('Host is required', 'error');
-        return;
-      }
-      if (!newConnection.database) {
-        addLog('Database name is required', 'error');
-        return;
-      }
-      if (!newConnection.username) {
-        addLog('Username is required', 'error');
-        return;
-      }
-      if (!newConnection.password) {
-        addLog('Password is required', 'error');
-        return;
-      }
-
-      console.log('Testing connection with:', {
-        ...newConnection,
-        password: '***'
-      });
-
-      const result = await databaseService.testConnection({
-        type: newConnection.type,
-        host: newConnection.host,
-        port: newConnection.port,
-        database: newConnection.database,
-        username: newConnection.username,
-        password: newConnection.password,
-        ssl: newConnection.ssl
-      });
-
-      if (result?.success) {
-        addLog(`Successfully connected to ${newConnection.name || 'database'}`, 'success');
-      } else {
-        addLog(`Connection failed: ${result?.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('Error testing connection:', error);
-      addLog(`Connection error: ${error instanceof Error ? error.message : String(error)}`, 'error');
-    }
   };
 
   // Format timestamp for logs
@@ -427,7 +385,6 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
 
   const loadTables = async (connection: DatabaseConnection, databaseName: string) => {
     const connectionId = connection.id;
-    const key = `${connectionId}-${databaseName}`;
     
     try {
       addLog(`Loading tables for database "${databaseName}"...`, 'info', connection.name);
@@ -449,6 +406,20 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       console.error('Failed to load tables:', error);
       addLog(`Failed to load tables: ${error instanceof Error ? error.message : String(error)}`, 'error', connection.name);
     }
+  };
+
+  // Add notification component
+  const Notification = ({ message, type }: { message: string; type: 'success' | 'error' }) => (
+    <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg ${
+      type === 'success' ? 'bg-green-500' : 'bg-red-500'
+    } text-white transition-opacity duration-300`}>
+      {message}
+    </div>
+  );
+
+  // Add scroll function
+  const scrollToSqlPreview = () => {
+    sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (
@@ -531,6 +502,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                                   setConnectionStatuses(prev => 
                                     prev.map(s => s.id === connection.id ? { ...s, status: 'success' as const } : s)
                                   );
+                                  onConnect(connection);
                                 } else {
                                   addLog(`Connection failed: ${result?.message}`, 'error');
                                   setConnectionStatuses(prev => 
@@ -1025,6 +997,9 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
           </div>
         </div>
       )}
+
+      {/* Notification */}
+      {notification && <Notification message={notification.message} type={notification.type} />}
     </div>
   );
 };
