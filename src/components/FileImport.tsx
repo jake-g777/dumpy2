@@ -252,14 +252,12 @@ const FileImport: React.FC<FileImportProps> = ({ onFileSelect }) => {
           </div>
         </div>
       ) : (
-        <div className="h-full overflow-hidden">
-          <div className="max-w-full overflow-x-auto">
-            <DataGrid
-              headers={parsedData.headers}
-              data={parsedData.rows}
-              isLoading={isLoading}
-            />
-          </div>
+        <div className="h-full w-full">
+          <DataGrid
+            headers={parsedData.headers}
+            data={parsedData.rows}
+            isLoading={isLoading}
+          />
         </div>
       )}
     </div>

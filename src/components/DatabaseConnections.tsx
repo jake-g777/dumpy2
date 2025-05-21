@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Plus, Edit2, Trash2, Check, X, Eye, EyeOff, ChevronDown, AlertCircle, ChevronUp } from 'lucide-react';
+import { Database, Plus, Edit2, Trash2, Check, X, Eye, EyeOff, ChevronDown, AlertCircle, ChevronUp, ChevronRight, Table } from 'lucide-react';
 import secureStorage from '../services/secureStorage';
 import databaseService from '../services/databaseService';
 import { useConnectionStatus } from '../hooks/useConnectionStatus';
@@ -22,6 +22,7 @@ export interface DatabaseConnection extends DatabaseConnectionInput {
 
 export interface DatabaseConnectionFormState extends DatabaseConnectionInput {
   name: string;
+  showAllDatabases: boolean;
 }
 
 interface DatabaseConnectionsProps {
@@ -46,6 +47,11 @@ interface ConnectionStatus {
     responseTime: number;
     activeQueries: number;
   };
+}
+
+interface DatabaseInfo {
+  name: string;
+  tables: string[];
 }
 
 const DATABASE_TYPES = {
@@ -86,6 +92,13 @@ const DATABASE_TYPES = {
   }
 };
 
+// Add this CSS animation at the top of the file after the imports
+const statusStyles = {
+  untested: 'bg-yellow-400 animate-pulse',
+  success: 'bg-green-400 animate-pulse',
+  failed: 'bg-red-400 animate-pulse'
+};
+
 const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) => {
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -97,6 +110,11 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
   const [connectionStatuses, setConnectionStatuses] = useState<ConnectionStatus[]>([]);
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
+  const [selectedConnectionForTables, setSelectedConnectionForTables] = useState<string | null>(null);
+  const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set());
+  const [expandedDatabases, setExpandedDatabases] = useState<Set<string>>(new Set());
+  const [databaseInfo, setDatabaseInfo] = useState<Record<string, DatabaseInfo[]>>({});
+  const [loadingDatabases, setLoadingDatabases] = useState<Set<string>>(new Set());
   
   const [newConnection, setNewConnection] = useState<DatabaseConnectionFormState>({
     type: 'mysql' as const,
@@ -106,7 +124,8 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     username: '',
     password: '',
     ssl: true,
-    name: ''
+    name: '',
+    showAllDatabases: false
   });
 
   // Load connections from secure storage on mount
@@ -148,14 +167,18 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
       username: '',
       password: '',
       ssl: true,
-      name: ''
+      name: '',
+      showAllDatabases: false
     });
   };
 
   // Handle edit button click
   const handleEditClick = (connection: DatabaseConnection) => {
     setEditingConnection(connection);
-    setNewConnection(connection);
+    setNewConnection({
+      ...connection,
+      showAllDatabases: connection.database.toLowerCase() === 'mysql'
+    });
     setShowModal(true);
   };
 
@@ -163,7 +186,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     setSavingConnection(true);
     try {
       // Validate required fields
-      if (!newConnection.name || !newConnection.host || !newConnection.database) {
+      if (!newConnection.name || !newConnection.host || (!newConnection.database && !newConnection.showAllDatabases)) {
         addLog('Please fill in all required fields', 'error');
         return;
       }
@@ -187,25 +210,67 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
         return;
       }
 
+      let connectionId: string;
       if (editingConnection) {
         // Update existing connection
+        connectionId = editingConnection.id;
         setConnections(connections.map(conn => 
-          conn.id === editingConnection.id ? { ...conn, ...newConnection } : conn
+          conn.id === editingConnection.id ? { 
+            ...conn, 
+            ...newConnection,
+            database: newConnection.showAllDatabases ? 'mysql' : newConnection.database
+          } : conn
         ));
         addLog(`Connection "${newConnection.name}" updated successfully`, 'success');
       } else {
         // Add new connection with untested status
+        connectionId = Date.now().toString();
         const connection = {
           ...newConnection,
-          id: Date.now().toString(),
-          name: newConnection.name
+          id: connectionId,
+          name: newConnection.name,
+          database: newConnection.showAllDatabases ? 'mysql' : newConnection.database
         };
         setConnections([...connections, connection]);
-        setConnectionStatuses(prev => [...prev, { id: connection.id, status: 'untested' }]);
+        setConnectionStatuses(prev => [...prev, { id: connectionId, status: 'untested' }]);
         addLog(`Connection "${connection.name}" added successfully`, 'success');
       }
 
       handleCloseModal();
+
+      // Test the connection immediately after saving
+      try {
+        setTestingConnection(connectionId);
+        const result = await databaseService.testConnection({
+          type: newConnection.type,
+          host: newConnection.host,
+          port: newConnection.port,
+          database: newConnection.database,
+          username: newConnection.username,
+          password: newConnection.password,
+          ssl: newConnection.ssl
+        });
+
+        if (result?.success) {
+          addLog(`Successfully connected to ${newConnection.name}`, 'success');
+          setConnectionStatuses(prev => 
+            prev.map(s => s.id === connectionId ? { ...s, status: 'success' as const } : s)
+          );
+        } else {
+          addLog(`Connection failed: ${result?.message}`, 'error');
+          setConnectionStatuses(prev => 
+            prev.map(s => s.id === connectionId ? { ...s, status: 'failed' as const } : s)
+          );
+        }
+      } catch (error) {
+        console.error('Test connection error:', error);
+        addLog(`Connection error: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        setConnectionStatuses(prev => 
+          prev.map(s => s.id === connectionId ? { ...s, status: 'failed' as const } : s)
+        );
+      } finally {
+        setTestingConnection(null);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       addLog(`Failed to save connection: ${errorMessage}`, 'error');
@@ -293,6 +358,99 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
     });
   };
 
+  const toggleConnection = async (connectionId: string) => {
+    const newExpanded = new Set(expandedConnections);
+    if (newExpanded.has(connectionId)) {
+      newExpanded.delete(connectionId);
+    } else {
+      newExpanded.add(connectionId);
+      // Load databases if not already loaded
+      if (!databaseInfo[connectionId]) {
+        await loadDatabases(connectionId);
+      }
+    }
+    setExpandedConnections(newExpanded);
+  };
+
+  const toggleDatabase = async (connectionId: string, databaseName: string) => {
+    const newExpanded = new Set(expandedDatabases);
+    const key = `${connectionId}-${databaseName}`;
+    if (newExpanded.has(key)) {
+      newExpanded.delete(key);
+    } else {
+      newExpanded.add(key);
+      // Load tables if not already loaded
+      const connection = connections.find(c => c.id === connectionId);
+      if (connection) {
+        await loadTables(connection, databaseName);
+      }
+    }
+    setExpandedDatabases(newExpanded);
+  };
+
+  const loadDatabases = async (connectionId: string) => {
+    const connection = connections.find(c => c.id === connectionId);
+    if (!connection) return;
+
+    setLoadingDatabases(prev => new Set([...prev, connectionId]));
+    try {
+      if (connection.type === 'mysql' && connection.database.toLowerCase() === 'mysql') {
+        // If database is 'mysql', fetch all databases
+        const databases = await databaseService.getDatabases(connection);
+        setDatabaseInfo(prev => ({
+          ...prev,
+          [connectionId]: databases.map(db => ({ name: db, tables: [], views: [], viewType: 'tables' }))
+        }));
+      } else {
+        // Otherwise, just show the connected database
+        setDatabaseInfo(prev => ({
+          ...prev,
+          [connectionId]: [{
+            name: connection.database,
+            tables: [],
+            views: [],
+            viewType: 'tables'
+          }]
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load databases:', error);
+      addLog(`Failed to load databases: ${error instanceof Error ? error.message : String(error)}`, 'error');
+    } finally {
+      setLoadingDatabases(prev => {
+        const next = new Set(prev);
+        next.delete(connectionId);
+        return next;
+      });
+    }
+  };
+
+  const loadTables = async (connection: DatabaseConnection, databaseName: string) => {
+    const connectionId = connection.id;
+    const key = `${connectionId}-${databaseName}`;
+    
+    try {
+      addLog(`Loading tables for database "${databaseName}"...`, 'info', connection.name);
+      const tables = await databaseService.getTableNames({
+        ...connection,
+        database: databaseName
+      });
+      
+      setDatabaseInfo(prev => ({
+        ...prev,
+        [connectionId]: prev[connectionId].map(db => 
+          db.name === databaseName 
+            ? { ...db, tables }
+            : db
+        )
+      }));
+      addLog(`Successfully loaded ${tables.length} tables from "${databaseName}"`, 'success', connection.name);
+    } catch (error) {
+      console.error('Failed to load tables:', error);
+      addLog(`Failed to load tables: ${error instanceof Error ? error.message : String(error)}`, 'error', connection.name);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] overflow-hidden">
       {/* Header - Fixed height */}
@@ -300,69 +458,64 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
         <h2 className="text-lg font-semibold text-gray-900">Database Connections</h2>
         <button
           onClick={() => setShowModal(true)}
-          className="inline-flex items-center px-3 py-1.5 bg-black text-white text-sm rounded-md hover:bg-gray-900 transition-colors"
+          className="inline-flex items-center px-3 py-1.5 bg-black text-white text-sm rounded-md hover:bg-gray-800 transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4 mr-1" />
           Add Connection
         </button>
       </div>
 
-      {/* Main Content Area - Scrollable with bottom margin for console */}
+      {/* Main Content Area - Scrollable */}
       <div className="flex-1 min-h-0 bg-gray-50">
-        <div className={`h-full overflow-y-auto p-3 ${isConsoleCollapsed ? 'pb-8' : 'pb-80'}`}>
-          <div className="max-w-4xl mx-auto">
-            <div className="space-y-1.5">
-              {connections.length === 0 ? (
-                <div className="text-center py-6">
-                  <Database className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500">No database connections yet</p>
-                  <p className="text-sm text-gray-400">Click "Add Connection" to get started</p>
-                </div>
-              ) : (
-                connections.map(connection => {
-                  const status = connectionStatuses.find(s => s.id === connection.id);
-                  return (
-                    <div
-                      key={connection.id}
-                      className="bg-white rounded-lg border border-gray-200 p-2.5 hover:shadow-sm transition-shadow relative"
-                    >
-                      {/* Status Indicator */}
-                      <div className="absolute top-4 right-4">
-                        <div 
-                          className={`h-3 w-3 rounded-full ${
-                            !status || status.status === 'untested' 
-                              ? 'bg-yellow-400 animate-pulse' 
-                              : status.status === 'success'
-                              ? 'bg-green-400 animate-pulse'
-                              : 'bg-red-400 animate-pulse'
-                          }`}
+        <div className="h-full overflow-y-auto p-3">
+          <div className="space-y-1.5">
+            {connections.length === 0 ? (
+              <div className="text-center py-6">
+                <Database className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-500">No database connections yet</p>
+                <p className="text-sm text-gray-400">Click "Add Connection" to get started</p>
+              </div>
+            ) : (
+              connections.map(connection => {
+                const status = connectionStatuses.find(s => s.id === connection.id);
+                const isExpanded = expandedConnections.has(connection.id);
+                const databases = databaseInfo[connection.id] || [];
+                const isLoading = loadingDatabases.has(connection.id);
+
+                return (
+                  <div
+                    key={connection.id}
+                    className="bg-white rounded-lg border border-gray-200 p-2.5 hover:shadow-sm transition-shadow"
+                  >
+                    {/* Connection Header */}
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => toggleConnection(connection.id)}
+                        className="flex-1 flex items-center space-x-3 px-2 py-1.5 hover:bg-gray-50 rounded-md cursor-pointer"
+                      >
+                        <ChevronRight
+                          className={`w-4 h-4 transition-transform ${isExpanded ? 'transform rotate-90' : ''}`}
                         />
-                      </div>
-                      <div className="flex items-center justify-between pr-8">
-                        <div className="flex items-center space-x-3">
-                          <Database className="w-5 h-5 text-gray-500" />
-                          <div>
-                            <h3 className="font-medium text-gray-900">{connection.name}</h3>
-                            <p className="text-sm text-gray-500">
-                              {connection.type} • {connection.host}:{connection.port}
-                            </p>
-                            {status?.lastTested && (
-                              <p className="text-xs text-gray-400">
-                                Last tested: {new Date(status.lastTested).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
+                        <Database className="w-5 h-5 text-gray-500" />
+                        <div className="flex-1">
+                          <h3 className="font-medium text-gray-900">{connection.name}</h3>
+                          <p className="text-sm text-gray-500">
+                            {connection.type} • {connection.host}:{connection.port}
+                          </p>
                         </div>
                         <div className="flex items-center space-x-2">
+                          <div className={`h-3 w-3 rounded-full ${statusStyles[status?.status || 'untested']}`} />
+                          {status?.status === 'success' && (
+                            <span className="text-sm text-green-600 font-medium">Connected</span>
+                          )}
+                        </div>
+                      </button>
+                      <div className="flex items-center space-x-1">
+                        {status?.status !== 'success' && (
                           <button
                             onClick={async () => {
                               try {
-                                setTestingConnection(connection.id); // Show testing state
-                                console.log('Test button clicked, connection:', {
-                                  ...connection,
-                                  password: '***'
-                                });
-                                
+                                setTestingConnection(connection.id);
                                 const result = await databaseService.testConnection({
                                   type: connection.type,
                                   host: connection.host,
@@ -391,55 +544,189 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                                   prev.map(s => s.id === connection.id ? { ...s, status: 'failed' as const } : s)
                                 );
                               } finally {
-                                setTestingConnection(null); // Clear testing state
+                                setTestingConnection(null);
                               }
                             }}
-                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                            className={`px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer ${
                               testingConnection === connection.id
                                 ? 'text-gray-400 cursor-not-allowed'
                                 : 'text-gray-700 hover:bg-gray-50'
                             }`}
                             disabled={testingConnection === connection.id}
                           >
-                            {testingConnection === connection.id ? 'Testing...' : 'Test'}
+                            {testingConnection === connection.id ? 'Testing...' : 'Retry Connection'}
                           </button>
-                          <button
-                            onClick={() => setSelectedConnection(selectedConnection === connection.id ? null : connection.id)}
-                            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                              selectedConnection === connection.id
-                                ? 'bg-gray-100 text-gray-900'
-                                : 'text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            {selectedConnection === connection.id ? 'Hide Tables' : 'Show Tables'}
-                          </button>
-                          <button
-                            onClick={() => handleEditClick(connection)}
-                            className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteConnection(connection.id)}
-                            className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-md transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        )}
+                        <button
+                          onClick={() => handleEditClick(connection)}
+                          className="p-1.5 hover:bg-gray-100 rounded-md cursor-pointer"
+                        >
+                          <Edit2 className="w-4 h-4 text-gray-500" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteConnection(connection.id)}
+                          className="p-1.5 hover:bg-gray-100 rounded-md cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4 text-gray-500" />
+                        </button>
                       </div>
-                      {selectedConnection === connection.id && status?.status === 'success' && (
-                        <div className="mt-4 border-t border-gray-200 pt-4">
-                          <DatabaseTables 
-                            connectionId={connection.id} 
-                            connection={connection}
-                          />
-                        </div>
-                      )}
                     </div>
-                  );
-                })
-              )}
-            </div>
+
+                    {/* Databases List */}
+                    {isExpanded && (
+                      <div className="mt-2 ml-6 space-y-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-medium text-gray-700">Databases</div>
+                          <button
+                            onClick={async () => {
+                              try {
+                                if (connection.type === 'mysql' && connection.database.toLowerCase() === 'mysql') {
+                                  addLog(`Refreshing all databases...`, 'info', connection.name);
+                                  setLoadingDatabases(prev => new Set([...prev, connection.id]));
+                                  const databases = await databaseService.getDatabases(connection);
+                                  setDatabaseInfo(prev => ({
+                                    ...prev,
+                                    [connection.id]: databases.map(db => ({ name: db, tables: [], views: [], viewType: 'tables' }))
+                                  }));
+                                  
+                                  // Reload tables for all expanded databases
+                                  const expandedDbs = Array.from(expandedDatabases)
+                                    .filter(key => key.startsWith(`${connection.id}-`))
+                                    .map(key => key.split('-')[1]);
+                                  
+                                  if (expandedDbs.length > 0) {
+                                    addLog(`Refreshing tables for ${expandedDbs.length} expanded database(s)...`, 'info', connection.name);
+                                    for (const dbName of expandedDbs) {
+                                      const currentConn = connections.find(c => c.id === connection.id);
+                                      if (currentConn) {
+                                        await loadTables(currentConn, dbName);
+                                      }
+                                    }
+                                  }
+                                  addLog(`Successfully refreshed all databases`, 'success', connection.name);
+                                } else {
+                                  addLog(`Refreshing database "${connection.database}"...`, 'info', connection.name);
+                                  setLoadingDatabases(prev => new Set([...prev, connection.id]));
+                                  // Reload the connected database
+                                  setDatabaseInfo(prev => ({
+                                    ...prev,
+                                    [connection.id]: [{
+                                      name: connection.database,
+                                      tables: [],
+                                      views: [],
+                                      viewType: 'tables'
+                                    }]
+                                  }));
+                                  
+                                  // Reload tables if database is expanded
+                                  const dbKey = `${connection.id}-${connection.database}`;
+                                  if (expandedDatabases.has(dbKey)) {
+                                    addLog(`Refreshing tables for "${connection.database}"...`, 'info', connection.name);
+                                    await loadTables(connection, connection.database);
+                                  }
+                                  addLog(`Successfully refreshed database "${connection.database}"`, 'success', connection.name);
+                                }
+                              } catch (error) {
+                                console.error('Failed to refresh database:', error);
+                                addLog(`Failed to refresh database: ${error instanceof Error ? error.message : String(error)}`, 'error', connection.name);
+                              } finally {
+                                setLoadingDatabases(prev => {
+                                  const next = new Set(prev);
+                                  next.delete(connection.id);
+                                  return next;
+                                });
+                              }
+                            }}
+                            className="flex items-center space-x-1 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
+                            title="Refresh database"
+                          >
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span>Refresh</span>
+                          </button>
+                        </div>
+                        {isLoading ? (
+                          <div className="text-sm text-gray-500 py-2">Loading databases...</div>
+                        ) : databases.length === 0 ? (
+                          <div className="text-sm text-gray-500 py-2">No databases found on this connection</div>
+                        ) : (
+                          databases.map(db => {
+                            const dbKey = `${connection.id}-${db.name}`;
+                            const isDbExpanded = expandedDatabases.has(dbKey);
+                            
+                            return (
+                              <div key={db.name} className="border-l border-gray-200 pl-3">
+                                <button
+                                  onClick={() => toggleDatabase(connection.id, db.name)}
+                                  className="w-full flex items-center space-x-2 px-2 py-1.5 hover:bg-gray-50 rounded-md cursor-pointer"
+                                >
+                                  <ChevronRight
+                                    className={`w-3 h-3 transition-transform ${isDbExpanded ? 'transform rotate-90' : ''}`}
+                                  />
+                                  <Database className="w-4 h-4 text-gray-500" />
+                                  <span className="text-sm font-medium text-gray-700">{db.name}</span>
+                                </button>
+
+                                {/* Tables List */}
+                                {isDbExpanded && (
+                                  <div className="ml-4 mt-1 space-y-1">
+                                    <div className="border-l border-gray-200 pl-3">
+                                      <button
+                                        onClick={() => {
+                                          const key = `${connection.id}-${db.name}-tables`;
+                                          const newExpanded = new Set(expandedDatabases);
+                                          if (newExpanded.has(key)) {
+                                            newExpanded.delete(key);
+                                          } else {
+                                            newExpanded.add(key);
+                                            // Load tables if not already loaded
+                                            const currentConn = connections.find(c => c.id === connection.id);
+                                            if (currentConn && db.tables.length === 0) {
+                                              loadTables(currentConn, db.name);
+                                            }
+                                          }
+                                          setExpandedDatabases(newExpanded);
+                                        }}
+                                        className="w-full flex items-center space-x-2 px-2 py-1.5 hover:bg-gray-50 rounded-md cursor-pointer"
+                                      >
+                                        <ChevronRight
+                                          className={`w-3 h-3 transition-transform ${expandedDatabases.has(`${connection.id}-${db.name}-tables`) ? 'transform rotate-90' : ''}`}
+                                        />
+                                        <Table className="w-4 h-4 text-gray-500" />
+                                        <span className="text-sm font-medium text-gray-700">Tables</span>
+                                      </button>
+
+                                      {expandedDatabases.has(`${connection.id}-${db.name}-tables`) && (
+                                        <div className="ml-4 mt-1 space-y-1">
+                                          {db.tables.length === 0 ? (
+                                            <div className="text-sm text-gray-500 py-1">No tables found in this database</div>
+                                          ) : (
+                                            db.tables.map(table => (
+                                              <div
+                                                key={table}
+                                                className="flex items-center space-x-2 px-2 py-1 hover:bg-gray-50 rounded-md cursor-pointer"
+                                              >
+                                                <Table className="w-4 h-4 text-gray-500" />
+                                                <span className="text-sm text-gray-600">{table}</span>
+                                              </div>
+                                            ))
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -454,13 +741,13 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setLogs([])}
-              className="text-xs text-gray-400 hover:text-white transition-colors"
+              className="text-xs text-gray-400 hover:text-white transition-colors cursor-pointer"
             >
               Clear logs
             </button>
             <button
               onClick={() => setIsConsoleCollapsed(!isConsoleCollapsed)}
-              className="p-1 hover:bg-gray-800 rounded transition-colors"
+              className="p-1 hover:bg-gray-800 rounded transition-colors cursor-pointer"
             >
               {isConsoleCollapsed ? (
                 <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -508,7 +795,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
               </h3>
               <button
                 onClick={handleCloseModal}
-                className="p-1 hover:bg-gray-100 rounded-full"
+                className="p-1 hover:bg-gray-100 rounded-full cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -519,13 +806,16 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Connection Name
+                  <span className="text-xs text-gray-500 ml-1">
+                    (A friendly name to identify this connection)
+                  </span>
                 </label>
                 <input
                   type="text"
                   value={newConnection.name}
                   onChange={(e) => setNewConnection({ ...newConnection, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="My Development Database"
+                  placeholder="e.g., Production MySQL, Local PostgreSQL"
                 />
               </div>
 
@@ -533,6 +823,9 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Database Type
+                  <span className="text-xs text-gray-500 ml-1">
+                    (The type of database you're connecting to)
+                  </span>
                 </label>
                 <select
                   value={newConnection.type}
@@ -552,7 +845,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Host
                   <span className="text-xs text-gray-500 ml-1">
-                    (Server address)
+                    (The server address where your database is running)
                   </span>
                 </label>
                 <input
@@ -565,6 +858,9 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={DATABASE_TYPES[newConnection.type].hostPlaceholder}
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  For local databases, use "localhost" or "127.0.0.1". For remote servers, use the IP address or domain name.
+                </p>
               </div>
 
               {/* Port */}
@@ -572,7 +868,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Port
                   <span className="text-xs text-gray-500 ml-1">
-                    (Default: {DATABASE_TYPES[newConnection.type].defaultPort})
+                    (The port number your database is listening on)
                   </span>
                 </label>
                 <input
@@ -585,6 +881,9 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={String(DATABASE_TYPES[newConnection.type].defaultPort)}
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Common default ports: MySQL (3306), PostgreSQL (5432), SQL Server (1433), MongoDB (27017), Oracle (1521)
+                </p>
               </div>
 
               {/* Database Name */}
@@ -592,16 +891,44 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Database Name
                   <span className="text-xs text-gray-500 ml-1">
-                    (Schema or service name)
+                    (The name of the database you want to connect to)
                   </span>
                 </label>
-                <input
-                  type="text"
-                  value={newConnection.database}
-                  onChange={(e) => setNewConnection({ ...newConnection, database: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={DATABASE_TYPES[newConnection.type].databasePlaceholder}
-                />
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={newConnection.showAllDatabases ? 'mysql' : newConnection.database}
+                    onChange={(e) => setNewConnection({ ...newConnection, database: e.target.value })}
+                    className={`flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      newConnection.showAllDatabases ? 'bg-gray-100 cursor-not-allowed' : ''
+                    }`}
+                    placeholder={DATABASE_TYPES[newConnection.type].databasePlaceholder}
+                    disabled={newConnection.showAllDatabases}
+                  />
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="showAllDatabases"
+                      checked={newConnection.showAllDatabases}
+                      onChange={(e) => {
+                        setNewConnection({
+                          ...newConnection,
+                          showAllDatabases: e.target.checked,
+                          database: e.target.checked ? 'mysql' : newConnection.database
+                        });
+                      }}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="showAllDatabases" className="text-sm text-gray-700">
+                      Show all databases
+                    </label>
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  {newConnection.showAllDatabases 
+                    ? "When checked, you'll see all databases you have access to."
+                    : "This is the specific database you want to access. For some database types, this might be called a 'schema' or 'service name'."}
+                </p>
               </div>
 
               {/* Username */}
@@ -609,7 +936,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Username
                   <span className="text-xs text-gray-500 ml-1">
-                    (Database user)
+                    (The database user account)
                   </span>
                 </label>
                 <input
@@ -617,14 +944,20 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                   value={newConnection.username}
                   onChange={(e) => setNewConnection({ ...newConnection, username: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="admin"
+                  placeholder="e.g., admin, root, postgres"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  The username must have appropriate permissions to access the database.
+                </p>
               </div>
 
               {/* Password */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Password
+                  <span className="text-xs text-gray-500 ml-1">
+                    (The password for the database user)
+                  </span>
                 </label>
                 <div className="relative">
                   <input
@@ -646,6 +979,9 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                     )}
                   </button>
                 </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Your password is stored securely and encrypted.
+                </p>
               </div>
 
               {/* SSL */}
@@ -659,23 +995,26 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect }) 
                 <label className="ml-2 block text-sm text-gray-900">
                   Use SSL/TLS connection
                   <span className="text-xs text-gray-500 ml-1">
-                    (Recommended for production)
+                    (Encrypts the connection for security)
                   </span>
                 </label>
+                <p className="mt-1 text-xs text-gray-500 ml-6">
+                  Recommended for production environments and when connecting to remote databases.
+                </p>
               </div>
             </div>
 
             <div className="flex justify-end space-x-2 mt-6">
               <button
                 onClick={handleCloseModal}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
                 disabled={savingConnection}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveConnection}
-                className={`px-4 py-2 bg-black text-white rounded-md hover:bg-gray-900 ${
+                className={`px-4 py-2 bg-black text-white rounded-md hover:bg-gray-900 cursor-pointer ${
                   savingConnection ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
                 disabled={savingConnection}

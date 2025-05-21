@@ -222,7 +222,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
               <div className="mt-8 space-y-4">
                 <button 
                   onClick={handleNewFileImport}
-                  className="w-64 flex items-center justify-center space-x-2 px-4 py-3 bg-black text-white rounded-lg hover:bg-gray-900 transition-colors"
+                  className="w-64 flex items-center justify-center space-x-2 px-4 py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
                 >
                   <FileUp size={20} />
                   <span>New File Import</span>
@@ -230,7 +230,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 
                 <button 
                   onClick={handleNewApiImport}
-                  className="w-64 flex items-center justify-center space-x-2 px-4 py-3 border-2 border-black text-black rounded-lg hover:bg-gray-50 transition-colors"
+                  className="w-64 flex items-center justify-center space-x-2 px-4 py-3 border-2 border-black text-black rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                 >
                   <Globe size={20} />
                   <span>New API Import</span>
@@ -241,7 +241,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
         );
       case 'file-import':
         return (
-          <div className="flex flex-col items-center min-h-[calc(100vh-6rem)]">
+          <div className="h-full w-full overflow-hidden">
             <DataImporter 
               onFileSelect={(fileName) => updateTabFileName(activeTabId, fileName)}
               onDataChange={(data) => updateTabData(activeTabId, data)}
@@ -294,7 +294,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
           <nav className="flex-1 p-4 space-y-2">
             <button 
               onClick={() => setActiveTabId('welcome')}
-              className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+              className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
             >
               <Home size={20} />
               <span>Home</span>
@@ -306,7 +306,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                   setActiveTabId('jobs');
                   setIsActiveJobsOpen(!isActiveJobsOpen);
                 }}
-                className="w-full flex items-center justify-between px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+                className="w-full flex items-center justify-between px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
               >
                 <div className="flex items-center space-x-3">
                   <FileUp size={20} />
@@ -316,10 +316,10 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
               </button>
               {isActiveJobsOpen && (
                 <div className="ml-8 mt-2 space-y-2">
-                  <button className="w-full text-left px-3 py-1 text-sm text-gray-600 hover:text-gray-900">
+                  <button className="w-full text-left px-3 py-1 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                     Job 1
                   </button>
-                  <button className="w-full text-left px-3 py-1 text-sm text-gray-600 hover:text-gray-900">
+                  <button className="w-full text-left px-3 py-1 text-sm text-gray-600 hover:text-gray-900 cursor-pointer">
                     Job 2
                   </button>
                 </div>
@@ -328,13 +328,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
 
             <button 
               onClick={handleDatabaseConnectionsClick}
-              className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+              className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer"
             >
               <Database size={20} />
               <span>Database Connections</span>
             </button>
 
-            <button className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md">
+            <button className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer">
               <Link2 size={20} />
               <span>API Connections</span>
             </button>
@@ -342,7 +342,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
 
           {/* Settings at bottom */}
           <div className="p-4 border-t border-gray-200">
-            <button className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md">
+            <button className="w-full flex items-center space-x-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md cursor-pointer">
               <Settings size={20} />
               <span>Settings</span>
             </button>
@@ -351,7 +351,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
       </div>
 
       {/* Main Content */}
-      <div className={`flex-1 ${isDrawerOpen ? 'ml-64' : 'ml-0'} transition-margin duration-200 ease-in-out pt-8`}>
+      <div className={`flex-1 ${isDrawerOpen ? 'ml-64' : 'ml-0'} transition-margin duration-200 ease-in-out pt-8 max-w-[calc(100vw-16rem)]`}>
         {/* Top Bar with Tabs */}
         <div className="sticky top-8 z-20 bg-white border-b border-gray-200">
           <div className="flex items-center h-10 px-4">
@@ -365,7 +365,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
             )}
             
             {/* Tab Bar */}
-            <div className="flex space-x-1 flex-1">
+            <div className="flex flex-wrap gap-1 flex-1">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
@@ -376,7 +376,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
-                  <span>{tab.title}</span>
+                  <span className="truncate max-w-[150px]">{tab.title}</span>
                   {tab.id !== 'welcome' && (
                     <CloseIcon
                       size={16}
@@ -394,8 +394,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
         </div>
 
         {/* Content Area */}
-        <div className="bg-gray-200 flex-1">
-          <div className="px-4 h-full">
+        <div className="bg-gray-200 flex-1 overflow-hidden">
+          <div className="h-full w-full overflow-hidden">
             {renderTabContent(tabs.find(tab => tab.id === activeTabId)!)}
           </div>
         </div>
