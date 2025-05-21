@@ -11,10 +11,8 @@ interface DatabaseTablesProps {
 }
 
 const DatabaseTables: React.FC<DatabaseTablesProps> = ({ 
-  connectionId, 
   connection, 
-  isOpen, 
-  onClose 
+  isOpen
 }) => {
   const [tableNames, setTableNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
