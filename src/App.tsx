@@ -6,7 +6,6 @@ import Hero from './components/Hero';
 import Banner from './components/Banner';
 import SignIn from './components/SignIn';
 import DashboardLayout from './components/DashboardLayout';
-import DatabaseConnections from './components/DatabaseConnections';
 
 const HomePage: React.FC<{ isBannerVisible: boolean }> = ({ isBannerVisible }) => {
   useEffect(() => {
@@ -69,7 +68,6 @@ const App: React.FC = () => {
               <Route path="/signin" element={<SignIn />} />
               <Route path="/dashboard" element={<DashboardLayout />} />
             </Routes>
-            <DatabaseConnections onConnect={() => {}} />
           </div>
         </ThemeProvider>
       </Router>

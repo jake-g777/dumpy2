@@ -57,5 +57,69 @@ namespace DumpyServer.Controllers
                 return BadRequest(new { error = ex.Message });
             }
         }
+
+        [HttpPost("databases")]
+        public async Task<ActionResult<List<string>>> GetDatabases([FromBody] DatabaseConnection connection)
+        {
+            try
+            {
+                var handler = _handlerFactory.GetHandler(connection.Type);
+                var databases = await handler.GetDatabases(connection);
+                return Ok(databases);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get databases");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("tables")]
+        public async Task<ActionResult<List<DatabaseTable>>> GetTables([FromBody] DatabaseConnection connection)
+        {
+            try
+            {
+                var handler = _handlerFactory.GetHandler(connection.Type);
+                var tables = await handler.GetTables(connection);
+                return Ok(tables);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get tables");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("table-names")]
+        public async Task<ActionResult<List<string>>> GetTableNames([FromBody] DatabaseConnection connection)
+        {
+            try
+            {
+                var handler = _handlerFactory.GetHandler(connection.Type);
+                var tableNames = await handler.GetTableNames(connection);
+                return Ok(tableNames);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get table names");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("views")]
+        public async Task<ActionResult<List<string>>> GetViews([FromBody] DatabaseConnection connection)
+        {
+            try
+            {
+                var handler = _handlerFactory.GetHandler(connection.Type);
+                var views = await handler.GetViews(connection);
+                return Ok(views);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get views");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
     }
 } 

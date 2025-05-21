@@ -9,6 +9,24 @@ interface ConnectionTestResult {
   details: string;
 }
 
+interface TableColumn {
+  name: string;
+  dataType: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  isForeignKey: boolean;
+  defaultValue?: string;
+}
+
+interface DatabaseTable {
+  name: string;
+  schema: string;
+  type: string;
+  rowCount: number;
+  lastModified?: Date;
+  columns: TableColumn[];
+}
+
 class DatabaseService {
   async testConnection(connection: DatabaseConnectionInput): Promise<ConnectionTestResult> {
     try {
@@ -31,6 +49,23 @@ class DatabaseService {
       console.error('Test connection error:', error);
       throw error;
     }
+  }
+
+  async getDatabases(connection: DatabaseConnection): Promise<string[]> {
+    const response = await fetch(`${API_BASE_URL}/database/databases`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(connection),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get databases');
+    }
+
+    return data;
   }
 
   async query(connection: DatabaseConnection, query: string, params: any[] = []) {
@@ -70,6 +105,57 @@ class DatabaseService {
       },
       body: JSON.stringify({ connection }),
     });
+  }
+
+  async getTables(connection: DatabaseConnection): Promise<DatabaseTable[]> {
+    const response = await fetch(`${API_BASE_URL}/database/tables`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(connection),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get tables');
+    }
+
+    return data;
+  }
+
+  async getTableNames(connection: DatabaseConnection): Promise<string[]> {
+    const response = await fetch(`${API_BASE_URL}/database/table-names`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(connection),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get table names');
+    }
+
+    return data;
+  }
+
+  async getViews(connection: DatabaseConnection): Promise<string[]> {
+    const response = await fetch(`${API_BASE_URL}/database/views`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(connection),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to get views');
+    }
+
+    return data;
   }
 }
 

@@ -625,83 +625,89 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
               <div className="flex-1 flex flex-col mt-6">
                 <div className="flex-1 overflow-auto">
                   <div className="shadow-lg border border-gray-200 rounded-lg bg-white">
-                    <table className="w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          {parsedData.headers.map((header, index) => (
-                            <th
-                              key={index}
-                              className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative group bg-gray-50"
-                              draggable
-                              onDragStart={() => handleColumnDragStart(index)}
-                              onDragOver={(e) => handleColumnDragOver(e, index)}
-                              onDragEnd={handleColumnDragEnd}
-                            >
-                              <div className="flex items-center gap-2">
-                                <GripVertical className="w-4 h-4 text-gray-400 cursor-move opacity-0 group-hover:opacity-100" />
-                                {editingHeader?.index === index ? (
-                                  <input
-                                    type="text"
-                                    value={editingHeader.value}
-                                    onChange={(e) => setEditingHeader({ ...editingHeader, value: e.target.value })}
-                                    onBlur={saveHeaderEdit}
-                                    onKeyPress={(e) => e.key === 'Enter' && saveHeaderEdit()}
-                                    className="border rounded px-2 py-1 text-sm w-full"
-                                    autoFocus
-                                  />
-                                ) : (
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span>{header}</span>
-                                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-                                      <button
-                                        onClick={() => startEditingHeader(index)}
-                                        className="p-1 hover:bg-gray-200 rounded"
-                                      >
-                                        <Edit2 className="w-3 h-3 text-gray-500" />
-                                      </button>
-                                      <button
-                                        onClick={() => sortRowsByColumn(index)}
-                                        className="p-1 hover:bg-gray-200 rounded"
-                                      >
-                                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
-                                      </button>
-                                      <button
-                                        onClick={() => removeColumn(index)}
-                                        className="p-1 hover:bg-gray-200 rounded"
-                                      >
-                                        <X className="w-3 h-3 text-gray-500" />
-                                      </button>
-                                    </div>
+                    <div className="overflow-x-auto">
+                      <div className="inline-block min-w-full align-middle">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                              {parsedData.headers.map((header, index) => (
+                                <th
+                                  key={index}
+                                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider relative group bg-gray-50"
+                                  draggable
+                                  onDragStart={() => handleColumnDragStart(index)}
+                                  onDragOver={(e) => handleColumnDragOver(e, index)}
+                                  onDragEnd={handleColumnDragEnd}
+                                  style={{ minWidth: '150px' }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <GripVertical className="w-4 h-4 text-gray-400 cursor-move opacity-0 group-hover:opacity-100" />
+                                    {editingHeader?.index === index ? (
+                                      <input
+                                        type="text"
+                                        value={editingHeader.value}
+                                        onChange={(e) => setEditingHeader({ ...editingHeader, value: e.target.value })}
+                                        onBlur={saveHeaderEdit}
+                                        onKeyPress={(e) => e.key === 'Enter' && saveHeaderEdit()}
+                                        className="border rounded px-2 py-1 text-sm w-full"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <div className="flex items-center gap-2 flex-1">
+                                        <span>{header}</span>
+                                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                                          <button
+                                            onClick={() => startEditingHeader(index)}
+                                            className="p-1 hover:bg-gray-200 rounded"
+                                          >
+                                            <Edit2 className="w-3 h-3 text-gray-500" />
+                                          </button>
+                                          <button
+                                            onClick={() => sortRowsByColumn(index)}
+                                            className="p-1 hover:bg-gray-200 rounded"
+                                          >
+                                            <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                                          </button>
+                                          <button
+                                            onClick={() => removeColumn(index)}
+                                            className="p-1 hover:bg-gray-200 rounded"
+                                          >
+                                            <X className="w-3 h-3 text-gray-500" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {paginatedRows.map((row, rowIndex) => (
-                          <tr key={rowIndex} className="group">
-                            {row.map((cell, cellIndex) => (
-                              <td
-                                key={cellIndex}
-                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                              >
-                                {cell}
-                              </td>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {paginatedRows.map((row, rowIndex) => (
+                              <tr key={rowIndex} className="group">
+                                {row.map((cell, cellIndex) => (
+                                  <td
+                                    key={cellIndex}
+                                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                    style={{ minWidth: '150px' }}
+                                  >
+                                    {cell}
+                                  </td>
+                                ))}
+                                <td className="opacity-0 group-hover:opacity-100 px-2">
+                                  <button
+                                    onClick={() => removeRow(rowIndex)}
+                                    className="p-1 hover:bg-gray-100 rounded"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" />
+                                  </button>
+                                </td>
+                              </tr>
                             ))}
-                            <td className="opacity-0 group-hover:opacity-100 px-2">
-                              <button
-                                onClick={() => removeRow(rowIndex)}
-                                className="p-1 hover:bg-gray-100 rounded"
-                              >
-                                <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
