@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, FileWarning, Trash2, GripVertical, X, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Globe2, FileUp, ChevronDown, History, ChevronUp, Database, Code, Server, Table, Loader2, AlertCircle, Copy, CheckCircle } from 'lucide-react';
+import { Upload, Download, FileWarning, Trash2, GripVertical, X, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Globe2, FileUp, ChevronDown, History, ChevronUp, Database, Code, Server, Table, Loader2, AlertCircle, Copy, CheckCircle, Calendar } from 'lucide-react';
 import FileImport from './FileImport';
 import Papa from 'papaparse';
+import { parse, isValid, format } from 'date-fns';
+import DateFormatCorrector from './modals/DateFormatCorrector';
+import EmptyValueDeleter from './modals/EmptyValueDeleter';
 
 interface ParsedData {
   headers: string[];
@@ -42,15 +45,21 @@ interface AuditLogEntry {
   timestamp: Date;
   action: string;
   details: string;
+  data?: {
+    type: 'row_deletion';
+    rows: string[][];
+    indices: number[];
+  };
 }
 
 interface AuditLogWindowProps {
   logs: AuditLogEntry[];
   isOpen: boolean;
   onClose: () => void;
+  onRevert?: (entry: AuditLogEntry) => void;
 }
 
-const AuditLogWindow: React.FC<AuditLogWindowProps> = ({ logs, isOpen, onClose }) => {
+const AuditLogWindow: React.FC<AuditLogWindowProps> = ({ logs, isOpen, onClose, onRevert }) => {
   if (!isOpen) return null;
 
   return (
@@ -77,6 +86,15 @@ const AuditLogWindow: React.FC<AuditLogWindowProps> = ({ logs, isOpen, onClose }
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-gray-600">{log.details}</p>
+                  {log.data?.type === 'row_deletion' && onRevert && (
+                    <button
+                      onClick={() => onRevert(log)}
+                      className="mt-2 inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-700 hover:text-blue-800 hover:bg-blue-50 rounded-md"
+                    >
+                      <History className="w-4 h-4 mr-1.5" />
+                      Revert Deletion
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -198,6 +216,7 @@ interface EditableColumn {
   scale?: number;
   validationError?: string;
   isNullable: boolean;
+  validationStatus?: 'validating' | 'valid' | 'invalid';
 }
 
 interface DataTypeOption {
@@ -212,14 +231,16 @@ interface DataTypeOption {
 
 const dataTypeOptions: Record<string, Record<string, DataTypeOption>> = {
   sqlserver: {
+    'tinyint': { name: 'tinyint', hasLength: false, hasPrecision: false, hasScale: false },
+    'smallint': { name: 'smallint', hasLength: false, hasPrecision: false, hasScale: false },
+    'int': { name: 'int', hasLength: false, hasPrecision: false, hasScale: false },
+    'bigint': { name: 'bigint', hasLength: false, hasPrecision: false, hasScale: false },
     'varchar': { name: 'varchar', hasLength: true, hasPrecision: false, hasScale: false, defaultLength: 255 },
     'nvarchar': { name: 'nvarchar', hasLength: true, hasPrecision: false, hasScale: false, defaultLength: 255 },
     'char': { name: 'char', hasLength: true, hasPrecision: false, hasScale: false, defaultLength: 50 },
     'nchar': { name: 'nchar', hasLength: true, hasPrecision: false, hasScale: false, defaultLength: 50 },
     'decimal': { name: 'decimal', hasLength: false, hasPrecision: true, hasScale: true, defaultPrecision: 18, defaultScale: 0 },
     'numeric': { name: 'numeric', hasLength: false, hasPrecision: true, hasScale: true, defaultPrecision: 18, defaultScale: 0 },
-    'int': { name: 'int', hasLength: false, hasPrecision: false, hasScale: false },
-    'bigint': { name: 'bigint', hasLength: false, hasPrecision: false, hasScale: false },
     'datetime': { name: 'datetime', hasLength: false, hasPrecision: false, hasScale: false },
     'datetime2': { name: 'datetime2', hasLength: false, hasPrecision: false, hasScale: false },
     'date': { name: 'date', hasLength: false, hasPrecision: false, hasScale: false },
@@ -259,13 +280,20 @@ const inferColumnType = (values: string[]): { type: string; length?: number; pre
       const maxPrecision = Math.max(...numbers.map(n => n.toString().replace('.', '').length));
       return { type: 'decimal', precision: maxPrecision, scale: 2 };
     }
-    // Only use int if the numbers are within a reasonable range
+    
+    // Determine appropriate integer type based on value ranges
     const maxNumber = Math.max(...numbers);
     const minNumber = Math.min(...numbers);
-    if (maxNumber <= 2147483647 && minNumber >= -2147483648) {
+    
+    if (maxNumber <= 255 && minNumber >= 0) {
+      return { type: 'tinyint' };
+    } else if (maxNumber <= 32767 && minNumber >= -32768) {
+      return { type: 'smallint' };
+    } else if (maxNumber <= 2147483647 && minNumber >= -2147483648) {
       return { type: 'int' };
+    } else {
+      return { type: 'bigint' };
     }
-    return { type: 'bigint' };
   }
 
   // Check if all values are dates
@@ -377,6 +405,16 @@ const commonDataTypes = {
   ]
 };
 
+interface ColumnValidationError {
+  columnIndex: number;
+  columnName: string;
+  errors: {
+    rowIndex: number;
+    value: string;
+    message: string;
+  }[];
+}
+
 const DatabaseModal: React.FC<DatabaseModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -407,8 +445,12 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [lastGeneratedSql, setLastGeneratedSql] = useState<string>('');
   const [showCopyAnimation, setShowCopyAnimation] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const caseMenuRef = useRef<HTMLDivElement>(null);
   const sqlPreviewRef = useRef<HTMLDivElement>(null);
+  const [validationErrors, setValidationErrors] = useState<ColumnValidationError[]>([]);
+  const [isValidating, setIsValidating] = useState(false);
+  const [hasValidated, setHasValidated] = useState(false);
 
   // Initialize editable columns with type inference
   useEffect(() => {
@@ -500,7 +542,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     setHasUnsavedChanges(true);
   };
 
-  const handleColumnChange = (index: number, field: keyof EditableColumn, value: string | boolean | number) => {
+  const handleColumnChange = (index: number, field: keyof EditableColumn, value: string | boolean | number | undefined) => {
     setEditableColumns(prev => {
       const newColumns = prev.map((col, i) => {
         if (i !== index) return col;
@@ -524,6 +566,9 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     setShowSqlPreview(false);
     setGeneratedSql('');
     setHasUnsavedChanges(true);
+    // Reset validation state when column changes
+    setValidationErrors([]);
+    setHasValidated(false);
   };
 
   const handleOperation = async () => {
@@ -708,10 +753,10 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 
   const removeRow = (rowIndex: number) => {
     if (!parsedData) return;
-    const actualIndex = (currentPage - 1) * rowsPerPage + rowIndex;
-    
-    setEditableColumns((prev: EditableColumn[]) => prev.filter((_: EditableColumn, index: number) => index !== actualIndex));
-    setHasUnsavedChanges(true);
+    setParsedData({
+      headers: parsedData.headers,
+      rows: parsedData.rows.filter((_, i) => i !== rowIndex)
+    });
   };
 
   const handleDatabaseOperation = async (databaseId: string, tableId: string) => {
@@ -791,11 +836,489 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     }
   };
 
+  const validateColumnData = (column: EditableColumn, columnIndex: number, data: string[][]): ColumnValidationError | null => {
+    if (!parsedData) return null;
+    
+    const errors: { rowIndex: number; value: string; message: string }[] = [];
+    const typeOption = dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][column.type];
+
+    data.forEach((row, rowIndex) => {
+      const value = row[columnIndex];
+      
+      // Skip empty values if nullable
+      if ((value === null || value === undefined || value.trim() === '') && column.nullable) {
+        return;
+      }
+
+      // Check string length for varchar types
+      if (typeOption.hasLength && column.length) {
+        if (value.length > column.length) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `Value exceeds maximum length of ${column.length} characters`
+          });
+        }
+      }
+
+      // Check numeric ranges
+      if (['tinyint', 'smallint', 'int', 'bigint'].includes(column.type)) {
+        const num = Number(value);
+        if (isNaN(num)) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `Value is not a valid number`
+          });
+        } else {
+          switch (column.type) {
+            case 'tinyint':
+              if (num < 0 || num > 255) {
+                errors.push({
+                  rowIndex,
+                  value,
+                  message: `Value must be between 0 and 255`
+                });
+              }
+              break;
+            case 'smallint':
+              if (num < -32768 || num > 32767) {
+                errors.push({
+                  rowIndex,
+                  value,
+                  message: `Value must be between -32,768 and 32,767`
+                });
+              }
+              break;
+            case 'int':
+              if (num < -2147483648 || num > 2147483647) {
+                errors.push({
+                  rowIndex,
+                  value,
+                  message: `Value must be between -2,147,483,648 and 2,147,483,647`
+                });
+              }
+              break;
+          }
+        }
+      }
+
+      // Check decimal precision and scale
+      if (['decimal', 'numeric'].includes(column.type) && column.precision && column.scale) {
+        const num = Number(value);
+        if (isNaN(num)) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `Value is not a valid number`
+          });
+        } else {
+          const [whole, decimal] = value.split('.');
+          if (whole.length > (column.precision - column.scale)) {
+            errors.push({
+              rowIndex,
+              value,
+              message: `Whole number part exceeds precision of ${column.precision - column.scale} digits`
+            });
+          }
+          if (decimal && decimal.length > column.scale) {
+            errors.push({
+              rowIndex,
+              value,
+              message: `Decimal part exceeds scale of ${column.scale} digits`
+            });
+          }
+        }
+      }
+
+      // Check date formats
+      if (['date', 'datetime', 'datetime2'].includes(column.type)) {
+        const dbType = selectedConnectionInfo?.type || 'sqlserver';
+        
+        // Database-specific date validation
+        switch (dbType) {
+          case 'sqlserver':
+            // SQL Server accepts YYYY-MM-DD for date and YYYY-MM-DD HH:mm:ss[.nnn] for datetime
+            const sqlServerDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            const sqlServerDateTimeRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{3})?$/;
+            
+            if (column.type === 'date' && !sqlServerDateRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `SQL Server date must be in YYYY-MM-DD format`
+              });
+            } else if (['datetime', 'datetime2'].includes(column.type) && !sqlServerDateTimeRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `SQL Server datetime must be in YYYY-MM-DD HH:mm:ss[.nnn] format`
+              });
+            }
+            break;
+
+          case 'postgresql':
+            // PostgreSQL accepts ISO 8601 format
+            const postgresDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            const postgresDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{6})?$/;
+            
+            if (column.type === 'date' && !postgresDateRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `PostgreSQL date must be in YYYY-MM-DD format`
+              });
+            } else if (['timestamp'].includes(column.type) && !postgresDateTimeRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `PostgreSQL timestamp must be in ISO 8601 format (YYYY-MM-DDTHH:mm:ss[.nnnnnn])`
+              });
+            }
+            break;
+
+          case 'mysql':
+            // MySQL accepts YYYY-MM-DD for date and YYYY-MM-DD HH:mm:ss for datetime
+            const mysqlDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            const mysqlDateTimeRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+            
+            if (column.type === 'date' && !mysqlDateRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `MySQL date must be in YYYY-MM-DD format`
+              });
+            } else if (['datetime'].includes(column.type) && !mysqlDateTimeRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `MySQL datetime must be in YYYY-MM-DD HH:mm:ss format`
+              });
+            }
+            break;
+
+          case 'oracle':
+            // Oracle accepts YYYY-MM-DD for date and YYYY-MM-DD HH:mm:ss for timestamp
+            const oracleDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            const oracleTimestampRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{6})?$/;
+            
+            if (column.type === 'date' && !oracleDateRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `Oracle date must be in YYYY-MM-DD format`
+              });
+            } else if (['timestamp'].includes(column.type) && !oracleTimestampRegex.test(value)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `Oracle timestamp must be in YYYY-MM-DD HH:mm:ss[.nnnnnn] format`
+              });
+            }
+            break;
+        }
+
+        // Additional validation for date ranges
+        if (!errors.some(e => e.rowIndex === rowIndex)) {
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            errors.push({
+              rowIndex,
+              value,
+              message: `Value is not a valid date`
+            });
+          } else {
+            // Check for valid date ranges based on database type
+            switch (dbType) {
+              case 'sqlserver':
+                if (column.type === 'datetime' && date < new Date('1753-01-01')) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `SQL Server datetime must be after 1753-01-01`
+                  });
+                }
+                break;
+              case 'mysql':
+                if (date < new Date('1000-01-01') || date > new Date('9999-12-31')) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `MySQL date must be between 1000-01-01 and 9999-12-31`
+                  });
+                }
+                break;
+              case 'postgresql':
+                if (date < new Date('4713 BC') || date > new Date('294276-12-31')) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `PostgreSQL date must be between 4713 BC and 294276-12-31`
+                  });
+                }
+                break;
+            }
+          }
+        }
+      }
+
+      // Check string types
+      if (['varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'].includes(column.type)) {
+        const dbType = selectedConnectionInfo?.type || 'sqlserver';
+        
+        // Check string length
+        if (['varchar', 'nvarchar', 'char', 'nchar'].includes(column.type) && column.length) {
+          const maxLength = column.length;
+          if (value.length > maxLength) {
+            errors.push({
+              rowIndex,
+              value,
+              message: `${dbType} ${column.type}(${maxLength}) cannot exceed ${maxLength} characters`
+            });
+          }
+        }
+
+        // Check for null bytes in string
+        if (value.includes('\0')) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `${dbType} does not allow null bytes in string values`
+          });
+        }
+
+        // Check for specific database constraints
+        switch (dbType) {
+          case 'sqlserver':
+            // SQL Server specific checks
+            if (['nvarchar', 'nchar', 'ntext'].includes(column.type)) {
+              // Check for valid Unicode characters
+              if (!/^[\u0000-\uFFFF]*$/.test(value)) {
+                errors.push({
+                  rowIndex,
+                  value,
+                  message: `SQL Server ${column.type} must contain valid Unicode characters`
+                });
+              }
+            }
+            break;
+          case 'postgresql':
+            // PostgreSQL specific checks
+            if (column.type === 'text' && value.length > 1073741824) { // 1GB limit
+              errors.push({
+                rowIndex,
+                value,
+                message: `PostgreSQL text cannot exceed 1GB`
+              });
+            }
+            break;
+        }
+      }
+
+      // Check boolean types
+      if (['bit', 'boolean'].includes(column.type)) {
+        const dbType = selectedConnectionInfo?.type || 'sqlserver';
+        const validValues = {
+          sqlserver: ['0', '1', 'true', 'false', 'TRUE', 'FALSE'],
+          postgresql: ['true', 'false', 'TRUE', 'FALSE', 't', 'f', 'T', 'F', '1', '0'],
+          mysql: ['true', 'false', 'TRUE', 'FALSE', '1', '0'],
+          oracle: ['true', 'false', 'TRUE', 'FALSE', '1', '0']
+        };
+
+        if (!validValues[dbType].includes(value.toLowerCase())) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `${dbType} ${column.type} must be one of: ${validValues[dbType].join(', ')}`
+          });
+        }
+      }
+
+      // Check decimal/numeric types with precision and scale
+      if (['decimal', 'numeric'].includes(column.type)) {
+        const dbType = selectedConnectionInfo?.type || 'sqlserver';
+        const num = Number(value);
+        
+        if (isNaN(num)) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `Value must be a valid number`
+          });
+        } else {
+          // Check precision and scale
+          if (column.precision && column.scale) {
+            const [whole, decimal] = value.split('.');
+            const decimalPart = decimal || '';
+            
+            // Check whole number part
+            if (whole.length > (column.precision - column.scale)) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `${dbType} ${column.type}(${column.precision},${column.scale}) whole number part cannot exceed ${column.precision - column.scale} digits`
+              });
+            }
+            
+            // Check decimal part
+            if (decimalPart.length > column.scale) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `${dbType} ${column.type}(${column.precision},${column.scale}) decimal part cannot exceed ${column.scale} digits`
+              });
+            }
+
+            // Check database-specific limits
+            switch (dbType) {
+              case 'sqlserver':
+                if (column.precision > 38) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `SQL Server ${column.type} precision cannot exceed 38`
+                  });
+                }
+                break;
+              case 'postgresql':
+                if (column.precision > 1000) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `PostgreSQL ${column.type} precision cannot exceed 1000`
+                  });
+                }
+                break;
+              case 'mysql':
+                if (column.precision > 65) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `MySQL ${column.type} precision cannot exceed 65`
+                  });
+                }
+                break;
+              case 'oracle':
+                if (column.precision > 38) {
+                  errors.push({
+                    rowIndex,
+                    value,
+                    message: `Oracle ${column.type} precision cannot exceed 38`
+                  });
+                }
+                break;
+            }
+          }
+        }
+      }
+
+      // Check money types
+      if (['money', 'smallmoney'].includes(column.type)) {
+        const dbType = selectedConnectionInfo?.type || 'sqlserver';
+        const num = Number(value);
+        
+        if (isNaN(num)) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `Value must be a valid number`
+          });
+        } else {
+          switch (column.type) {
+            case 'money':
+              if (num < -922337203685477.5808 || num > 922337203685477.5807) {
+                errors.push({
+                  rowIndex,
+                  value,
+                  message: `SQL Server money must be between -922,337,203,685,477.5808 and 922,337,203,685,477.5807`
+                });
+              }
+              break;
+            case 'smallmoney':
+              if (num < -214748.3648 || num > 214748.3647) {
+                errors.push({
+                  rowIndex,
+                  value,
+                  message: `SQL Server smallmoney must be between -214,748.3648 and 214,748.3647`
+                });
+              }
+              break;
+          }
+        }
+      }
+
+      // Check binary types
+      if (['binary', 'varbinary', 'image'].includes(column.type)) {
+        const dbType = selectedConnectionInfo?.type || 'sqlserver';
+        
+        // Check if the value is a valid hex string
+        if (!/^[0-9A-Fa-f]*$/.test(value)) {
+          errors.push({
+            rowIndex,
+            value,
+            message: `${dbType} ${column.type} must be a valid hexadecimal string`
+          });
+        } else {
+          // Check length for fixed-length binary types
+          if (column.type === 'binary' && column.length) {
+            const byteLength = Math.ceil(value.length / 2);
+            if (byteLength > column.length) {
+              errors.push({
+                rowIndex,
+                value,
+                message: `SQL Server binary(${column.length}) cannot exceed ${column.length} bytes`
+              });
+            }
+          }
+        }
+      }
+    });
+
+    return errors.length > 0 ? {
+      columnIndex,
+      columnName: column.name,
+      errors
+    } : null;
+  };
+
+  const validateTable = () => {
+    if (!parsedData) return;
+    
+    setIsValidating(true);
+    const errors: ColumnValidationError[] = [];
+    
+    // Set all columns to validating state
+    setEditableColumns(prev => prev.map(col => ({
+      ...col,
+      validationStatus: 'validating'
+    })));
+    
+    // Validate each column
+    editableColumns.forEach((column, index) => {
+      const columnErrors = validateColumnData(column, index, parsedData.rows);
+      if (columnErrors) {
+        errors.push(columnErrors);
+      }
+      
+      // Update validation status for this column
+      setEditableColumns(prev => prev.map((col, i) => 
+        i === index ? {
+          ...col,
+          validationStatus: columnErrors ? 'invalid' : 'valid'
+        } : col
+      ));
+    });
+
+    setValidationErrors(errors);
+    setHasValidated(true);
+    setIsValidating(false);
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-[900px] max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-gray-900">Database Operations</h2>
+          <h2 className="text-lg font-medium text-gray-900">Database Operations</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-500"
@@ -906,50 +1429,77 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                       </span>
                     )}
                   </div>
-                  {operationType === 'create' && (
-                    <div className="flex items-center space-x-2">
-                      <div className="relative" ref={caseMenuRef}>
-                        <button
-                          onClick={() => setShowCaseMenu(!showCaseMenu)}
-                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md border border-gray-300"
-                        >
-                          <span>Transform Headers</span>
-                          <ChevronDown className="w-4 h-4 ml-1" />
-                        </button>
-                        {showCaseMenu && (
-                          <div className="absolute right-0 mt-1 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
-                            <div className="py-1" role="menu">
-                              {caseOptions.map((option) => (
-                                <button
-                                  key={option.id}
-                                  onClick={() => transformColumnNames(option.id as any)}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-between"
-                                  role="menuitem"
-                                >
-                                  <span>{option.label}</span>
-                                  <span className="text-xs text-gray-500">{option.example}</span>
-                                </button>
-                              ))}
-                            </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={validateTable}
+                      disabled={isValidating}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md border border-gray-300 transition-all duration-150 active:scale-95 active:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                    >
+                      {isValidating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-1.5" />
+                          Test Table
+                        </>
+                      )}
+                    </button>
+                    <div className="relative" ref={caseMenuRef}>
+                      <button
+                        onClick={() => setShowCaseMenu(!showCaseMenu)}
+                        className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md border border-gray-300"
+                      >
+                        <span>Transform Headers</span>
+                        <ChevronDown className="w-4 h-4 ml-1" />
+                      </button>
+                      {showCaseMenu && (
+                        <div className="absolute right-0 mt-1 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
+                          <div className="py-1" role="menu">
+                            {caseOptions.map((option) => (
+                              <button
+                                key={option.id}
+                                onClick={() => transformColumnNames(option.id as any)}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-between"
+                                role="menuitem"
+                              >
+                                <span>{option.label}</span>
+                                <span className="text-xs text-gray-500">{option.example}</span>
+                              </button>
+                            ))}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
                 <div className="bg-gray-50 rounded-md p-4">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead>
                       <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Column Name</th>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nullable</th>
-                        {/* Add more headers for length, precision, scale, etc. if needed */}
                       </tr>
                     </thead>
                     <tbody>
                       {editableColumns.map((col, index) => (
                         <tr key={index}>
+                          <td className="px-4 py-2">
+                            {col.validationStatus === 'validating' && (
+                              <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                            )}
+                            {col.validationStatus === 'valid' && (
+                              <CheckCircle className="w-4 h-4 text-green-500" />
+                            )}
+                            {col.validationStatus === 'invalid' && (
+                              <AlertCircle className="w-4 h-4 text-red-500" />
+                            )}
+                          </td>
                           <td className="px-4 py-2">
                             <input
                               type="text"
@@ -969,19 +1519,110 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                               ))}
                             </select>
                           </td>
-                          <td className="px-4 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={col.nullable}
-                              onChange={e => handleColumnChange(index, 'nullable', e.target.checked)}
-                            />
+                          <td className="px-4 py-2">
+                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasLength && (
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  value={col.length || ''}
+                                  onChange={e => handleColumnChange(index, 'length', parseInt(e.target.value) || undefined)}
+                                  min="1"
+                                  max="8000"
+                                  className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
+                                  placeholder="Length"
+                                />
+                                <span className="text-sm text-gray-500">characters</span>
+                              </div>
+                            )}
+                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasPrecision && (
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={col.precision || ''}
+                                    onChange={e => handleColumnChange(index, 'precision', parseInt(e.target.value) || undefined)}
+                                    min="1"
+                                    max="38"
+                                    className="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
+                                    placeholder="Precision"
+                                  />
+                                  {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasScale && (
+                                    <>
+                                      <span className="text-sm text-gray-500">,</span>
+                                      <input
+                                        type="number"
+                                        value={col.scale || ''}
+                                        onChange={e => handleColumnChange(index, 'scale', parseInt(e.target.value) || undefined)}
+                                        min="0"
+                                        max={col.precision || 38}
+                                        className="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
+                                        placeholder="Scale"
+                                      />
+                                    </>
+                                  )}
+                                </div>
+                                <span className="text-sm text-gray-500">digits</span>
+                              </div>
+                            )}
+                            {!dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasLength && 
+                             !dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasPrecision && (
+                              <span className="text-sm text-gray-500">-</span>
+                            )}
                           </td>
-                          {/* Add more cells for length, precision, scale, etc. if needed */}
+                          <td className="px-4 py-2">
+                            <div className="flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={col.nullable}
+                                onChange={e => handleColumnChange(index, 'nullable', e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Validation Summary */}
+                {hasValidated && (
+                  <div className={`mt-4 p-4 rounded-md border ${
+                    validationErrors.length > 0 
+                      ? 'bg-red-50 border-red-200' 
+                      : 'bg-green-50 border-green-200'
+                  }`}>
+                    {validationErrors.length > 0 ? (
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-medium text-red-800 mb-2">Validation Errors</h4>
+                        {validationErrors.map((columnError) => (
+                          <div key={columnError.columnIndex} className="text-sm">
+                            <div className="font-medium text-red-700">
+                              Column "{columnError.columnName}":
+                            </div>
+                            <ul className="mt-1 space-y-1">
+                              {columnError.errors.slice(0, 5).map((error, index) => (
+                                <li key={index} className="text-red-600">
+                                  Row {error.rowIndex + 1}: {error.message} (Value: "{error.value}")
+                                </li>
+                              ))}
+                              {columnError.errors.length > 5 && (
+                                <li className="text-red-600">
+                                  ... and {columnError.errors.length - 5} more errors
+                                </li>
+                              )}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center text-green-800">
+                        <CheckCircle className="w-5 h-5 mr-2" />
+                        <span className="text-sm font-medium">All columns validate successfully!</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1106,7 +1747,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
       )}
 
       {/* Notification */}
-      {notification && <Notification message={notification.message} type={notification.type} />}
+      {notification && <Notification message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
     </div>
   );
 };
@@ -1114,15 +1755,43 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 interface NotificationProps {
   message: string;
   type: 'success' | 'error';
+  onClose: () => void;
 }
 
-const Notification: React.FC<NotificationProps> = ({ message, type }) => (
-  <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg ${
-    type === 'success' ? 'bg-green-500' : 'bg-red-500'
-  } text-white transition-opacity duration-300`}>
-    {message}
-  </div>
-);
+const Notification: React.FC<NotificationProps> = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div 
+      className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 transform transition-all duration-300 ease-in-out ${
+        type === 'success' 
+          ? 'bg-green-50 border border-green-200 text-green-800' 
+          : 'bg-red-50 border border-red-200 text-red-800'
+      }`}
+    >
+      <div className="flex-1 flex items-center gap-2">
+        {type === 'success' ? (
+          <CheckCircle className="w-5 h-5 text-green-500" />
+        ) : (
+          <AlertCircle className="w-5 h-5 text-red-500" />
+        )}
+        <span className="text-sm font-medium">{message}</span>
+      </div>
+      <button
+        onClick={onClose}
+        className="text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
 
 const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange, initialData, initialFile }) => {
   const [dataSource, setDataSource] = useState<DataSource>('file');
@@ -1170,6 +1839,10 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showCopyAnimation, setShowCopyAnimation] = useState(false);
+  const [showDateFormatCorrector, setShowDateFormatCorrector] = useState(false);
+  const [selectedColumnForDateCorrection, setSelectedColumnForDateCorrection] = useState<{ index: number; name: string } | null>(null);
+  const [showEmptyValueDeleter, setShowEmptyValueDeleter] = useState<boolean>(false);
+  const [selectedColumnForEmptyDeletion, setSelectedColumnForEmptyDeletion] = useState<string>('');
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1309,11 +1982,12 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     });
   };
 
-  const addAuditLog = (action: string, details: string) => {
+  const addAuditLog = (action: string, details: string, data?: { type: 'row_deletion'; rows: string[][]; indices: number[] }) => {
     setAuditLogs(prev => [{
       timestamp: new Date(),
       action,
-      details
+      details,
+      data
     }, ...prev]);
   };
 
@@ -1545,35 +2219,18 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
 
   const removeColumn = (columnIndex: number) => {
     if (!parsedData) return;
-    const columnName = parsedData.headers[columnIndex];
-    
     setParsedData({
-      headers: parsedData.headers.filter((_, index) => index !== columnIndex),
-      rows: parsedData.rows.map(row => row.filter((_, index) => index !== columnIndex))
+      headers: parsedData.headers.filter((_, i) => i !== columnIndex),
+      rows: parsedData.rows.map(row => row.filter((_, i) => i !== columnIndex))
     });
-    
-    addAuditLog('Column Removed', `Removed column: "${columnName}"`);
   };
 
   const removeRow = (rowIndex: number) => {
     if (!parsedData) return;
-    const actualIndex = (currentPage - 1) * rowsPerPage + rowIndex;
-    
     setParsedData({
       headers: parsedData.headers,
-      rows: parsedData.rows.filter((_, index) => index !== actualIndex)
+      rows: parsedData.rows.filter((_, i) => i !== rowIndex)
     });
-    setCurrentPage(1);
-  };
-
-  const removeNullRows = () => {
-    if (!parsedData) return;
-
-    setParsedData({
-      headers: parsedData.headers,
-      rows: parsedData.rows.filter(row => row.every(cell => cell.trim() !== ''))
-    });
-    setCurrentPage(1);
   };
 
   const startEditingHeader = (index: number) => {
@@ -1588,17 +2245,13 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   const handleColumnDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (draggedColumnIndex === null || draggedColumnIndex === index) return;
-    if (!parsedData) return;
-    const newHeaders = [...parsedData.headers];
-    const newRows = parsedData.rows.map(row => [...row]);
-    const moveColumn = (arr: any[], from: number, to: number) => {
-      const element = arr[from];
-      arr.splice(from, 1);
-      arr.splice(to, 0, element);
-    };
-    moveColumn(newHeaders, draggedColumnIndex, index);
-    newRows.forEach(row => moveColumn(row, draggedColumnIndex, index));
-    setParsedData({ headers: newHeaders, rows: newRows });
+    setEditableColumns((prev: EditableColumn[]) => {
+      const newColumns = [...prev];
+      const draggedColumn = newColumns[draggedColumnIndex as number];
+      newColumns.splice(draggedColumnIndex as number, 1);
+      newColumns.splice(index, 0, draggedColumn);
+      return newColumns;
+    });
     setDraggedColumnIndex(index);
   };
 
@@ -1687,11 +2340,28 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   };
 
   // Add notification component
-  const Notification: React.FC<NotificationProps> = ({ message, type }) => (
-    <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg ${
-      type === 'success' ? 'bg-green-500' : 'bg-red-500'
-    } text-white transition-opacity duration-300`}>
-      {message}
+  const Notification: React.FC<NotificationProps> = ({ message, type, onClose }) => (
+    <div 
+      className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 transform transition-all duration-300 ease-in-out ${
+        type === 'success' 
+          ? 'bg-green-50 border border-green-200 text-green-800' 
+          : 'bg-red-50 border border-red-200 text-red-800'
+      }`}
+    >
+      <div className="flex-1 flex items-center gap-2">
+        {type === 'success' ? (
+          <CheckCircle className="w-5 h-5 text-green-500" />
+        ) : (
+          <AlertCircle className="w-5 h-5 text-red-500" />
+        )}
+        <span className="text-sm font-medium">{message}</span>
+      </div>
+      <button
+        onClick={onClose}
+        className="text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        <X className="w-4 h-4" />
+      </button>
     </div>
   );
 
@@ -1765,6 +2435,116 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     }
   };
 
+  // Add date format conversion function
+  const handleDateFormatConversion = async (sourceFormat: string, targetFormat: string) => {
+    if (!parsedData || !selectedColumnForDateCorrection) return;
+
+    const columnIndex = parsedData.headers.findIndex(
+      header => header === selectedColumnForDateCorrection.name
+    );
+    
+    if (columnIndex === -1) return;
+
+    let convertedCount = 0;
+    const newRows = parsedData.rows.map(row => {
+      const newRow = [...row];
+      const dateValue = row[columnIndex];
+      
+      // Skip empty values
+      if (!dateValue || dateValue.trim() === '') {
+        return newRow;
+      }
+      
+      try {
+        // Parse the date according to source format
+        const date = parse(dateValue, sourceFormat, new Date());
+        if (isValid(date)) {
+          // Format the date according to target format
+          newRow[columnIndex] = format(date, targetFormat);
+          convertedCount++;
+        }
+      } catch (error) {
+        console.error('Error converting date:', error);
+      }
+      
+      return newRow;
+    });
+
+    // Update the parsedData state with the new rows
+    setParsedData(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        rows: newRows
+      };
+    });
+
+    addAuditLog(
+      'Date Format Correction',
+      `Converted ${convertedCount} dates in column "${selectedColumnForDateCorrection.name}" from ${sourceFormat} to ${targetFormat}`
+    );
+
+    // Show notification with conversion results
+    setNotification({
+      message: `Successfully converted ${convertedCount} dates. Empty values were preserved.`,
+      type: 'success'
+    });
+  };
+
+  const handleEmptyValueDeletion = async (rowIndices: number[]) => {
+    if (!parsedData) return;
+    
+    // Store the rows being deleted for potential reversion
+    const deletedRows = rowIndices.map(index => parsedData.rows[index]);
+    
+    // Remove the rows
+    const newRows = parsedData.rows.filter((_, index) => !rowIndices.includes(index));
+    
+    setParsedData({
+      headers: parsedData.headers,
+      rows: newRows
+    });
+    
+    // Add to audit log with the deleted rows data
+    addAuditLog('Rows Deleted', `Deleted ${rowIndices.length} rows with empty values`, {
+      type: 'row_deletion',
+      rows: deletedRows,
+      indices: rowIndices
+    });
+    
+    setCurrentPage(1);
+
+    // Show notification
+    setNotification({
+      message: `Successfully deleted ${rowIndices.length} rows with empty values`,
+      type: 'success'
+    });
+  };
+
+  const handleRevertDeletion = (entry: AuditLogEntry) => {
+    if (!parsedData || !entry.data || entry.data.type !== 'row_deletion') return;
+    
+    // Reinsert the deleted rows at their original positions
+    const newRows = [...parsedData.rows];
+    entry.data.indices.forEach((originalIndex, i) => {
+      newRows.splice(originalIndex, 0, entry.data!.rows[i]);
+    });
+    
+    setParsedData({
+      headers: parsedData.headers,
+      rows: newRows
+    });
+    
+    // Add a new audit log entry for the reversion
+    addAuditLog('Deletion Reverted', `Reverted deletion of ${entry.data.rows.length} rows`);
+
+    // Show notification
+    setNotification({
+      message: `Successfully reverted deletion of ${entry.data.rows.length} rows`,
+      type: 'success'
+    });
+  };
+
   return (
     <div className="h-full w-full">
       {showFileUploader ? (
@@ -1823,12 +2603,27 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                     </div>
                   )}
                   <button
-                    onClick={removeNullRows}
+                    onClick={() => {
+                      setShowEmptyValueDeleter(true);
+                      setSelectedColumnForEmptyDeletion('');
+                    }}
                     className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
                   >
                     <Trash2 className="w-4 h-4 mr-1.5" />
-                    Remove Null Rows
+                    Delete Empty Values
                   </button>
+                  {parsedData && (
+                    <button
+                      onClick={() => {
+                        setShowDateFormatCorrector(true);
+                        setSelectedColumnForDateCorrection(null);
+                      }}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+                    >
+                      <Calendar className="w-4 h-4 mr-1.5" />
+                      Format Dates
+                    </button>
+                  )}
                   {parsedData && (
                     <button
                       onClick={() => setIsEditMode(!isEditMode)}
@@ -1842,13 +2637,27 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                       {isEditMode ? 'Exit Edit Mode' : 'Edit Grid'}
                     </button>
                   )}
-                  <button
-                    onClick={() => setShowAuditLogs(true)}
-                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-                  >
-                    <History className="w-4 h-4 mr-1.5" />
-                    Audit Logs
-                  </button>
+                  {parsedData && (
+                    <button
+                      onClick={() => {
+                        setShowEmptyValueDeleter(true);
+                        setSelectedColumnForEmptyDeletion('');
+                      }}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1.5" />
+                      Delete Empty Values
+                    </button>
+                  )}
+                  {parsedData && (
+                    <button
+                      onClick={() => setShowAuditLogs(true)}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+                    >
+                      <History className="w-4 h-4 mr-1.5" />
+                      Audit Logs
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center space-x-4">
                   {error && (
@@ -2122,6 +2931,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
             logs={auditLogs}
             isOpen={showAuditLogs}
             onClose={() => setShowAuditLogs(false)}
+            onRevert={handleRevertDeletion}
           />
 
           <DatabaseModal
@@ -2186,31 +2996,63 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
       )}
 
       {/* Notification */}
-      {notification && <Notification message={notification.message} type={notification.type} />}
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
+
+      {/* Date Format Corrector */}
+      <DateFormatCorrector
+        isOpen={showDateFormatCorrector}
+        onClose={() => {
+          setShowDateFormatCorrector(false);
+          setSelectedColumnForDateCorrection(null);
+        }}
+        onConvert={(sourceFormat, targetFormat) => {
+          if (selectedColumnForDateCorrection) {
+            handleDateFormatConversion(sourceFormat, targetFormat);
+          }
+        }}
+        columns={parsedData?.headers.map(header => ({ name: header, type: '' })) || []}
+        selectedColumn={selectedColumnForDateCorrection?.name || ''}
+        onColumnSelect={(columnName) => {
+          setSelectedColumnForDateCorrection({
+            name: columnName,
+            index: parsedData?.headers.findIndex(h => h === columnName) || -1
+          });
+        }}
+        previewData={parsedData || undefined}
+      />
+
+      {/* EmptyValueDeleter Modal */}
+      {(() => {
+        console.log('Rendering modal with state:', showEmptyValueDeleter);
+        if (!showEmptyValueDeleter) {
+          console.log('Modal not rendered - showEmptyValueDeleter is false');
+          return null;
+        }
+        console.log('Rendering EmptyValueDeleter modal');
+        return (
+          <EmptyValueDeleter
+            isOpen={showEmptyValueDeleter}
+            onClose={() => {
+              console.log('Closing EmptyValueDeleter modal');
+              setShowEmptyValueDeleter(false);
+              setSelectedColumnForEmptyDeletion('');
+            }}
+            columns={parsedData?.headers.map(header => ({ name: header, type: '' })) || []}
+            selectedColumn={selectedColumnForEmptyDeletion}
+            onColumnSelect={setSelectedColumnForEmptyDeletion}
+            previewData={parsedData || undefined}
+            onDelete={handleEmptyValueDeletion}
+          />
+        );
+      })()}
     </div>
   );
 };
-
-// Add this at the end of the file, before the export
-const styles = `
-  @keyframes checkmark {
-    0% {
-      stroke-dashoffset: 100;
-    }
-    100% {
-      stroke-dashoffset: 0;
-    }
-  }
-
-  .animate-checkmark {
-    stroke-dasharray: 100;
-    animation: checkmark 0.3s ease-in-out forwards;
-  }
-`;
-
-// Add the styles to the document
-const styleSheet = document.createElement("style");
-styleSheet.innerText = styles;
-document.head.appendChild(styleSheet);
 
 export default DataImporter; 
