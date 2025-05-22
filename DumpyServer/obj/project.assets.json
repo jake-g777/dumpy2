@@ -4679,35 +4679,31 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\jakeg\\.nuget\\packages\\": {},
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {},
-    "C:\\Program Files (x86)\\Progress\\ToolboxNuGetPackages": {}
+    "C:\\Users\\JakeGerold\\.nuget\\packages\\": {},
+    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\jakeg\\dumpy\\dumpy2\\DumpyServer\\DumpyServer.csproj",
+      "projectUniqueName": "C:\\Users\\JakeGerold\\source\\repos\\dumpy\\DumpyServer\\DumpyServer.csproj",
       "projectName": "DumpyServer",
-      "projectPath": "C:\\Users\\jakeg\\dumpy\\dumpy2\\DumpyServer\\DumpyServer.csproj",
-      "packagesPath": "C:\\Users\\jakeg\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\jakeg\\dumpy\\dumpy2\\DumpyServer\\obj\\",
+      "projectPath": "C:\\Users\\JakeGerold\\source\\repos\\dumpy\\DumpyServer\\DumpyServer.csproj",
+      "packagesPath": "C:\\Users\\JakeGerold\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\JakeGerold\\source\\repos\\dumpy\\DumpyServer\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
-        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages",
-        "C:\\Program Files (x86)\\Progress\\ToolboxNuGetPackages"
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\jakeg\\dumpy\\dumpy2\\DumpyServer\\NuGet.Config",
-        "C:\\Users\\jakeg\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\JakeGerold\\source\\repos\\dumpy\\DumpyServer\\NuGet.Config",
+        "C:\\Users\\JakeGerold\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Telerik UI for WPF.config"
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
         "net9.0"
       ],
       "sources": {
-        "C:\\Program Files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -4788,7 +4784,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.102/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.101/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

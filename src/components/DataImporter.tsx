@@ -724,7 +724,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
 
     // Sort the rows based on the new direction
     if (newDirection === null) {
-      sortedRows = [...parsedData.rows];
+      sortedRows = [...originalRows]; // Use originalRows to restore unsorted state
     } else {
       sortedRows = [...parsedData.rows].sort((a, b) => {
         const valueA = a[columnIndex]?.trim() ?? '';
@@ -748,7 +748,10 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
     }
 
     setSortState({ column: columnIndex, direction: newDirection });
-    // Remove setParsedData call here as it's not needed in DatabaseModal
+    setParsedData({
+      ...parsedData,
+      rows: sortedRows
+    });
   };
 
   const removeRow = (rowIndex: number) => {
@@ -2184,7 +2187,8 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     const headers = rows[headerRowIndex];
     const dataRows = rows.slice(headerRowIndex + 1);
 
-    setOriginalRows(dataRows); // Store original order
+    // Store original rows for sorting reset
+    setOriginalRows(dataRows);
     setParsedData({
       headers,
       rows: dataRows
@@ -2283,7 +2287,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
 
     // Sort the rows based on the new direction
     if (newDirection === null) {
-      sortedRows = [...parsedData.rows];
+      sortedRows = [...originalRows]; // Use originalRows to restore unsorted state
     } else {
       sortedRows = [...parsedData.rows].sort((a, b) => {
         const valueA = a[columnIndex]?.trim() ?? '';
@@ -2307,7 +2311,10 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     }
 
     setSortState({ column: columnIndex, direction: newDirection });
-    // Remove setParsedData call here as it's not needed in DatabaseModal
+    setParsedData({
+      ...parsedData,
+      rows: sortedRows
+    });
   };
 
   const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLSelectElement>) => {

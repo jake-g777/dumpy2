@@ -20,13 +20,6 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
   previewData,
   onDelete
 }) => {
-  console.log('EmptyValueDeleter props:', {
-    isOpen,
-    selectedColumn,
-    columnsCount: columns.length,
-    hasPreviewData: !!previewData
-  });
-  
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [emptyRows, setEmptyRows] = useState<Array<{
     rowIndex: number;
@@ -41,12 +34,6 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
 
   // Find empty rows when column selection changes
   useEffect(() => {
-    console.log('EmptyValueDeleter useEffect - column selection changed:', {
-      selectedColumn,
-      hasPreviewData: !!previewData,
-      emptyRowsCount: emptyRows.length
-    });
-    
     if (!previewData || !selectedColumn) {
       setEmptyRows([]);
       setSelectedRows(new Set());
@@ -111,27 +98,18 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
 
   // Reset state when modal opens
   useEffect(() => {
-    console.log('EmptyValueDeleter useEffect - modal state changed:', {
-      isOpen,
-      selectedRowsCount: selectedRows.size,
-      hasDeletionResult: !!deletionResult
-    });
-    
     if (isOpen) {
       setSelectedRows(new Set());
       setDeletionResult(null);
     }
   }, [isOpen]);
 
-  if (!isOpen) {
-    console.log('EmptyValueDeleter returning null - modal is closed');
-    return null;
-  }
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-center mb-4">
+      <div className="bg-white rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-medium text-gray-900">Delete Empty Values</h3>
           <button
             onClick={onClose}
@@ -141,15 +119,15 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="flex-1 overflow-y-auto space-y-6">
+          <div className="px-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Select Column
             </label>
             <select
               value={selectedColumn}
               onChange={(e) => onColumnSelect(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select a column...</option>
               {columns.map((col) => (
@@ -160,12 +138,14 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
             </select>
           </div>
 
-          {emptyRows.length > 0 && (
-            <div className="mt-4">
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-sm font-medium text-gray-700">
-                  Found {emptyRows.length} rows with empty values
-                </h4>
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-700">
+                {selectedColumn 
+                  ? `Found ${emptyRows.length} rows with empty values`
+                  : 'Select a column to view empty values'}
+              </h4>
+              {selectedColumn && emptyRows.length > 0 && (
                 <div className="flex items-center space-x-2">
                   <label className="flex items-center space-x-2 text-sm text-gray-700">
                     <input
@@ -189,19 +169,23 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
                     Delete Selected ({selectedRows.size})
                   </button>
                 </div>
-              </div>
+              )}
+            </div>
 
-              <div className="border rounded-lg overflow-hidden">
+            <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+              <div className="max-h-[300px] overflow-y-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gray-100 sticky top-0">
                     <tr>
                       <th className="w-12 px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        <input
-                          type="checkbox"
-                          checked={selectedRows.size === emptyRows.length}
-                          onChange={handleSelectAll}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
+                        {selectedColumn && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRows.size === emptyRows.length}
+                            onChange={handleSelectAll}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        )}
                       </th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Row</th>
                       {previewData?.headers.map((header, index) => (
@@ -212,39 +196,61 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {emptyRows.map(({ rowIndex, row }) => (
-                      <tr key={rowIndex} className="hover:bg-gray-50">
-                        <td className="px-4 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.has(rowIndex)}
-                            onChange={() => handleSelectRow(rowIndex)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-sm text-gray-500">{rowIndex + 1}</td>
-                        {row.map((cell, cellIndex) => (
-                          <td key={cellIndex} className="px-4 py-2 text-sm text-gray-900">
-                            {cell}
+                    {selectedColumn ? (
+                      emptyRows.length > 0 ? (
+                        emptyRows.map(({ rowIndex, row }) => (
+                          <tr key={rowIndex} className="hover:bg-gray-50">
+                            <td className="px-4 py-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedRows.has(rowIndex)}
+                                onChange={() => handleSelectRow(rowIndex)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-500">{rowIndex + 1}</td>
+                            {row.map((cell, cellIndex) => {
+                              const selectedColumnIndex = previewData?.headers.findIndex(header => header === selectedColumn) ?? -1;
+                              const isEmpty = !cell || cell.trim() === '';
+                              const isSelectedColumn = cellIndex === selectedColumnIndex;
+                              
+                              return (
+                                <td key={cellIndex} className={`px-4 py-2 text-sm ${
+                                  isSelectedColumn && isEmpty
+                                    ? 'bg-red-50 text-red-700 relative group'
+                                    : 'text-gray-900'
+                                }`}>
+                                  {cell}
+                                  {isSelectedColumn && isEmpty && (
+                                    <div className="absolute inset-0 bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                                      <span className="text-xs text-red-600 font-medium">Empty Value</span>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={(previewData?.headers.length ?? 0) + 2} className="px-4 py-8 text-center text-sm text-gray-500">
+                            No empty values found in the selected column
                           </td>
-                        ))}
+                        </tr>
+                      )
+                    ) : (
+                      <tr>
+                        <td colSpan={previewData?.headers.length ? previewData.headers.length + 2 : 3} className="px-4 py-8 text-center text-sm text-gray-500">
+                          Select a column to view empty values
+                        </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
-          )}
+          </div>
 
-          {emptyRows.length === 0 && selectedColumn && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700">
-                No empty values found in the selected column.
-              </p>
-            </div>
-          )}
-
-          {/* Deletion Result */}
           {deletionResult && (
             <div className={`p-4 rounded-lg ${
               deletionResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
@@ -266,7 +272,6 @@ const EmptyValueDeleter: React.FC<EmptyValueDeleterProps> = ({
           )}
         </div>
 
-        {/* Action Buttons */}
         <div className="flex justify-end space-x-3 mt-4">
           <button
             onClick={onClose}
