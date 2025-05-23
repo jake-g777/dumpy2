@@ -429,7 +429,18 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const [newTableName, setNewTableName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [availableTables, setAvailableTables] = useState<TableInfo[]>([]);
-  const [editableColumns, setEditableColumns] = useState<EditableColumn[]>([]);
+  const [editableColumns, setEditableColumns] = useState<Array<{
+    name: string;
+    type: string;
+    nullable: boolean;
+    originalName: string;
+    length?: number;
+    precision?: number;
+    scale?: number;
+    isNullable: boolean;
+    validationError?: string;
+    validationStatus?: 'validating' | 'valid' | 'invalid';
+  }>>([]);
   const [draggedColumnIndex, setDraggedColumnIndex] = useState<number | null>(null);
   const [showCaseMenu, setShowCaseMenu] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -437,7 +448,7 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const [columnWidths, setColumnWidths] = useState<{ [key: number]: number }>({});
   const [sortState, setSortState] = useState<{ column: number | null; direction: 'asc' | 'desc' | null }>({ column: null, direction: null });
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [generatedSql, setGeneratedSql] = useState<string>('');
   const [showSqlPreview, setShowSqlPreview] = useState(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
@@ -452,10 +463,36 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
   const [isValidating, setIsValidating] = useState(false);
   const [hasValidated, setHasValidated] = useState(false);
 
+  // Add drag and drop handlers
+  const handleColumnDragStart = (index: number) => {
+    setDraggedColumnIndex(index);
+  };
+
+  const handleColumnDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedColumnIndex === null || draggedColumnIndex === index) return;
+    
+    setEditableColumns(prev => {
+      const newColumns = [...prev];
+      const draggedColumn = newColumns[draggedColumnIndex];
+      newColumns.splice(draggedColumnIndex, 1);
+      newColumns.splice(index, 0, draggedColumn);
+      return newColumns;
+    });
+    setDraggedColumnIndex(index);
+  };
+
+  const handleColumnDragEnd = () => {
+    setDraggedColumnIndex(null);
+    setShowSqlPreview(false);
+    setGeneratedSql('');
+    setHasUnsavedChanges(true);
+  };
+
   // Initialize editable columns with type inference
   useEffect(() => {
     if (parsedData && operationType !== 'select') {
-      const columns: EditableColumn[] = parsedData.headers.map((header, index) => {
+      const columns = parsedData.headers.map((header, index) => {
         const values = parsedData.rows.map(row => row[index]);
         const inferredType = inferColumnType(values);
         return {
@@ -466,7 +503,9 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
           originalName: header,
           length: inferredType.length,
           precision: inferredType.precision,
-          scale: inferredType.scale
+          scale: inferredType.scale,
+          validationError: undefined,
+          validationStatus: undefined
         };
       });
       setEditableColumns(columns);
@@ -1482,150 +1521,91 @@ const DatabaseModal: React.FC<DatabaseModalProps> = ({
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead>
                       <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Column Name</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data Type</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Length/Precision</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scale</th>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nullable</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validation</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {editableColumns.map((col, index) => (
-                        <tr key={index}>
-                          <td className="px-4 py-2">
-                            {col.validationStatus === 'validating' && (
-                              <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-                            )}
-                            {col.validationStatus === 'valid' && (
-                              <CheckCircle className="w-4 h-4 text-green-500" />
-                            )}
-                            {col.validationStatus === 'invalid' && (
-                              <AlertCircle className="w-4 h-4 text-red-500" />
-                            )}
-                          </td>
-                          <td className="px-4 py-2">
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {editableColumns.map((column, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                             <input
                               type="text"
-                              value={col.name}
-                              onChange={e => handleColumnChange(index, 'name', e.target.value)}
-                              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                              value={column.name}
+                              onChange={(e) => handleColumnChange(index, 'name', e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                             <select
-                              value={col.type}
-                              onChange={e => handleColumnChange(index, 'type', e.target.value)}
-                              className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                              value={column.type}
+                              onChange={(e) => handleColumnChange(index, 'type', e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
-                              {getAvailableDataTypes().map((type: string) => (
+                              {getAvailableDataTypes().map((type) => (
                                 <option key={type} value={type}>{type}</option>
                               ))}
                             </select>
                           </td>
-                          <td className="px-4 py-2">
-                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasLength && (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="number"
-                                  value={col.length || ''}
-                                  onChange={e => handleColumnChange(index, 'length', parseInt(e.target.value) || undefined)}
-                                  min="1"
-                                  max="8000"
-                                  className="w-24 rounded border border-gray-300 px-2 py-1 text-sm"
-                                  placeholder="Length"
-                                />
-                                <span className="text-sm text-gray-500">characters</span>
-                              </div>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][column.type]?.hasLength && (
+                              <input
+                                type="number"
+                                value={column.length || ''}
+                                onChange={(e) => handleColumnChange(index, 'length', parseInt(e.target.value))}
+                                className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Length"
+                              />
                             )}
-                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasPrecision && (
-                              <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    value={col.precision || ''}
-                                    onChange={e => handleColumnChange(index, 'precision', parseInt(e.target.value) || undefined)}
-                                    min="1"
-                                    max="38"
-                                    className="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
-                                    placeholder="Precision"
-                                  />
-                                  {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasScale && (
-                                    <>
-                                      <span className="text-sm text-gray-500">,</span>
-                                      <input
-                                        type="number"
-                                        value={col.scale || ''}
-                                        onChange={e => handleColumnChange(index, 'scale', parseInt(e.target.value) || undefined)}
-                                        min="0"
-                                        max={col.precision || 38}
-                                        className="w-16 rounded border border-gray-300 px-2 py-1 text-sm"
-                                        placeholder="Scale"
-                                      />
-                                    </>
-                                  )}
-                                </div>
-                                <span className="text-sm text-gray-500">digits</span>
-                              </div>
-                            )}
-                            {!dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasLength && 
-                             !dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][col.type]?.hasPrecision && (
-                              <span className="text-sm text-gray-500">-</span>
+                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][column.type]?.hasPrecision && (
+                              <input
+                                type="number"
+                                value={column.precision || ''}
+                                onChange={(e) => handleColumnChange(index, 'precision', parseInt(e.target.value))}
+                                className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Precision"
+                              />
                             )}
                           </td>
-                          <td className="px-4 py-2">
-                            <div className="flex items-center justify-center">
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                            {dataTypeOptions[selectedConnectionInfo?.type || 'sqlserver'][column.type]?.hasScale && (
                               <input
-                                type="checkbox"
-                                checked={col.nullable}
-                                onChange={e => handleColumnChange(index, 'nullable', e.target.checked)}
-                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                type="number"
+                                value={column.scale || ''}
+                                onChange={(e) => handleColumnChange(index, 'scale', parseInt(e.target.value))}
+                                className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Scale"
                               />
-                            </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                            <input
+                              type="checkbox"
+                              checked={column.isNullable}
+                              onChange={(e) => handleColumnChange(index, 'isNullable', e.target.checked)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            {column.validationStatus === 'validating' && (
+                              <span className="text-yellow-600">Validating...</span>
+                            )}
+                            {column.validationStatus === 'valid' && (
+                              <span className="text-green-600">Valid</span>
+                            )}
+                            {column.validationStatus === 'invalid' && (
+                              <span className="text-red-600">{column.validationError}</span>
+                            )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-
-                {/* Validation Summary */}
-                {hasValidated && (
-                  <div className={`mt-4 p-4 rounded-md border ${
-                    validationErrors.length > 0 
-                      ? 'bg-red-50 border-red-200' 
-                      : 'bg-green-50 border-green-200'
-                  }`}>
-                    {validationErrors.length > 0 ? (
-                      <div className="space-y-3">
-                        <h4 className="text-sm font-medium text-red-800 mb-2">Validation Errors</h4>
-                        {validationErrors.map((columnError) => (
-                          <div key={columnError.columnIndex} className="text-sm">
-                            <div className="font-medium text-red-700">
-                              Column "{columnError.columnName}":
-                            </div>
-                            <ul className="mt-1 space-y-1">
-                              {columnError.errors.slice(0, 5).map((error, index) => (
-                                <li key={index} className="text-red-600">
-                                  Row {error.rowIndex + 1}: {error.message} (Value: "{error.value}")
-                                </li>
-                              ))}
-                              {columnError.errors.length > 5 && (
-                                <li className="text-red-600">
-                                  ... and {columnError.errors.length - 5} more errors
-                                </li>
-                              )}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex items-center text-green-800">
-                        <CheckCircle className="w-5 h-5 mr-2" />
-                        <span className="text-sm font-medium">All columns validate successfully!</span>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
 
@@ -1807,7 +1787,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   const [draggedColumnIndex, setDraggedColumnIndex] = useState<number | null>(null);
   const [selectedHeaderRow, setSelectedHeaderRow] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [originalJsonData, setOriginalJsonData] = useState<any>(initialData?.originalJsonData || null);
   const [availablePaths, setAvailablePaths] = useState<JsonPath[]>(initialData?.availablePaths || []);
   const [selectedPath, setSelectedPath] = useState<JsonPath | null>(initialData?.selectedPath || null);
@@ -1831,10 +1811,14 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   const [editableColumns, setEditableColumns] = useState<Array<{
     name: string;
     type: string;
+    nullable: boolean;
+    originalName: string;
     length?: number;
     precision?: number;
     scale?: number;
     isNullable: boolean;
+    validationError?: string;
+    validationStatus?: 'validating' | 'valid' | 'invalid';
   }>>([]);
   const [generatedSql, setGeneratedSql] = useState('');
   const [lastGeneratedSql, setLastGeneratedSql] = useState('');
@@ -2259,8 +2243,11 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     setDraggedColumnIndex(index);
   };
 
-  const handleColumnDragEnd = () => {
+  const handleDragEnd = () => {
     setDraggedColumnIndex(null);
+    setShowSqlPreview(false);
+    setGeneratedSql('');
+    setHasUnsavedChanges(true);
   };
 
   const sortRowsByColumn = (columnIndex: number) => {
@@ -2609,41 +2596,6 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                       )}
                     </div>
                   )}
-                  <button
-                    onClick={() => {
-                      setShowEmptyValueDeleter(true);
-                      setSelectedColumnForEmptyDeletion('');
-                    }}
-                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1.5" />
-                    Delete Empty Values
-                  </button>
-                  {parsedData && (
-                    <button
-                      onClick={() => {
-                        setShowDateFormatCorrector(true);
-                        setSelectedColumnForDateCorrection(null);
-                      }}
-                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
-                    >
-                      <Calendar className="w-4 h-4 mr-1.5" />
-                      Format Dates
-                    </button>
-                  )}
-                  {parsedData && (
-                    <button
-                      onClick={() => setIsEditMode(!isEditMode)}
-                      className={`inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md ${
-                        isEditMode 
-                          ? 'bg-gray-900 text-white hover:bg-gray-800' 
-                          : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-                      }`}
-                    >
-                      <Edit2 className="w-4 h-4 mr-1.5" />
-                      {isEditMode ? 'Exit Edit Mode' : 'Edit Grid'}
-                    </button>
-                  )}
                   {parsedData && (
                     <button
                       onClick={() => {
@@ -2654,6 +2606,18 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                     >
                       <Trash2 className="w-4 h-4 mr-1.5" />
                       Delete Empty Values
+                    </button>
+                  )}
+                  {parsedData && (
+                    <button
+                      onClick={() => {
+                        setShowDateFormatCorrector(true);
+                        setSelectedColumnForDateCorrection(null);
+                      }}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md"
+                    >
+                      <Calendar className="w-4 h-4 mr-1.5" />
+                      Format Dates
                     </button>
                   )}
                   {parsedData && (
@@ -2748,8 +2712,8 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
 
               {/* Data Table */}
               {parsedData && (
-                <div className="flex-1 flex flex-col mt-6">
-                  <div className="h-[400px] overflow-hidden">
+                <div className="flex-1 flex flex-col mt-2">
+                  <div className="h-[500px] overflow-hidden">
                     <div className="shadow-lg border border-gray-200 rounded-lg bg-white h-full flex flex-col">
                       <div className="overflow-x-auto">
                         <div className="inline-block min-w-full align-middle">
@@ -2761,9 +2725,22 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                                     <span className="sr-only">Delete</span>
                                   </th>
                                 )}
-                                <th colSpan={parsedData.headers.length} className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
-                                  <div className="flex items-center">
+                                <th colSpan={parsedData.rows[0]?.length || parsedData.headers.length} className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
+                                  <div className="flex items-center justify-between">
                                     <span className="font-semibold text-gray-700">Headers</span>
+                                    {parsedData && (
+                                      <button
+                                        onClick={() => setIsEditMode(!isEditMode)}
+                                        className={`inline-flex items-center px-2 py-1 text-sm font-medium rounded-md transition-all duration-200 ${
+                                          isEditMode 
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md scale-105' 
+                                            : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100 border-2 border-transparent hover:border-blue-500'
+                                        }`}
+                                      >
+                                        <Edit2 className={`w-4 h-4 mr-1 ${isEditMode ? 'animate-pulse' : ''}`} />
+                                        {isEditMode ? 'Exit Edit Mode' : 'Edit Grid'}
+                                      </button>
+                                    )}
                                   </div>
                                 </th>
                               </tr>
@@ -2780,7 +2757,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
                                     draggable={!editingHeader}
                                     onDragStart={() => !editingHeader && handleColumnDragStart(index)}
                                     onDragOver={(e) => !editingHeader && handleColumnDragOver(e, index)}
-                                    onDragEnd={handleColumnDragEnd}
+                                    onDragEnd={handleDragEnd}
                                     style={{ 
                                       minWidth: '150px',
                                       width: columnWidths[index] ? `${columnWidths[index]}px` : undefined
