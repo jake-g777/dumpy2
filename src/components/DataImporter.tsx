@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, FileWarning, Trash2, GripVertical, X, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Globe2, FileUp, ChevronDown, History, ChevronUp, Database, Code, Server, Table, Loader2, AlertCircle, Copy, CheckCircle, Calendar } from 'lucide-react';
+import { Upload, Download, FileWarning, Trash2, GripVertical, X, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Globe2, FileUp, ChevronDown, History, ChevronUp, Database, Code, Server, Table, Loader2, AlertCircle, Copy, CheckCircle, Calendar, GitBranch } from 'lucide-react';
 import FileImport from './FileImport';
 import Papa from 'papaparse';
 import { parse, isValid, format } from 'date-fns';
 import DateFormatCorrector from './modals/DateFormatCorrector';
 import EmptyValueDeleter from './modals/EmptyValueDeleter';
+//import { readFile } from './utils/fileUtils';
+//import { extractJsonPaths } from './utils/jsonUtils';
+//import { parseFileData } from './utils/csvUtils';
 
 interface ParsedData {
   headers: string[];
@@ -39,6 +42,17 @@ interface DataImporterProps {
     selectedPath: JsonPath | null;
   };
   initialFile?: File;
+  pipeline?: {
+    id: string;
+    name: string;
+    description: string;
+    type: 'file' | 'api' | 'database';
+    createdAt: Date;
+    lastRun?: Date;
+    fileName?: string;
+    createdBy: string;
+  };
+  onBack: () => void;
 }
 
 interface AuditLogEntry {
@@ -1776,7 +1790,7 @@ const Notification: React.FC<NotificationProps> = ({ message, type, onClose }) =
   );
 };
 
-const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange, initialData, initialFile }) => {
+const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange, initialData, initialFile, pipeline, onBack }) => {
   const [dataSource, setDataSource] = useState<DataSource>('file');
   const [apiUrl, setApiUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1791,7 +1805,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   const [originalJsonData, setOriginalJsonData] = useState<any>(initialData?.originalJsonData || null);
   const [availablePaths, setAvailablePaths] = useState<JsonPath[]>(initialData?.availablePaths || []);
   const [selectedPath, setSelectedPath] = useState<JsonPath | null>(initialData?.selectedPath || null);
-  const [showFileUploader, setShowFileUploader] = useState(!initialFile && !initialData);
+  const [showFileUploader, setShowFileUploader] = useState(!initialFile && !initialData?.parsedData);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -1831,6 +1845,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
   const [showEmptyValueDeleter, setShowEmptyValueDeleter] = useState<boolean>(false);
   const [selectedColumnForEmptyDeletion, setSelectedColumnForEmptyDeletion] = useState<string>('');
 
+  // Handle click outside for menus
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
@@ -1847,6 +1862,29 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     };
   }, []);
 
+  // Initialize data from initialData
+  useEffect(() => {
+    if (initialData?.parsedData) {
+      setParsedData(initialData.parsedData);
+      if (initialData.parsedData.rows) {
+        setOriginalRows(initialData.parsedData.rows);
+      }
+    }
+    if (initialData?.rawData) {
+      setRawData(initialData.rawData);
+    }
+    if (initialData?.originalJsonData) {
+      setOriginalJsonData(initialData.originalJsonData);
+    }
+    if (initialData?.availablePaths) {
+      setAvailablePaths(initialData.availablePaths);
+    }
+    if (initialData?.selectedPath) {
+      setSelectedPath(initialData.selectedPath);
+    }
+  }, [initialData]);
+
+  // Notify parent of data changes
   useEffect(() => {
     if (parsedData || rawData || originalJsonData || availablePaths.length > 0 || selectedPath) {
       onDataChange({
@@ -1857,7 +1895,7 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
         selectedPath
       });
     }
-  }, [parsedData, rawData, originalJsonData, availablePaths, selectedPath]);
+  }, [parsedData, rawData, originalJsonData, availablePaths, selectedPath, onDataChange]);
 
   // Use initialFile if provided
   useEffect(() => {
@@ -1866,681 +1904,58 @@ const DataImporter: React.FC<DataImporterProps> = ({ onFileSelect, onDataChange,
     }
   }, [initialFile]);
 
-  // All the functions from your original code remain the same
-  const findJsonPaths = (obj: any, currentPath: string[] = []): JsonPath[] => {
-    let paths: JsonPath[] = [];
-    
-    if (Array.isArray(obj)) {
-      if (obj.length > 0 && typeof obj[0] === 'object' && obj[0] !== null) {
-        paths.push({ path: currentPath, type: 'array' });
-      }
-      obj.forEach((item, index) => {
-        if (typeof item === 'object' && item !== null) {
-          paths = [...paths, ...findJsonPaths(item, [...currentPath, index.toString()])];
-        }
-      });
-    } else if (typeof obj === 'object' && obj !== null) {
-      paths.push({ path: currentPath, type: 'object' });
-      Object.entries(obj).forEach(([key, value]) => {
-        if (typeof value === 'object' && value !== null) {
-          paths = [...paths, ...findJsonPaths(value, [...currentPath, key])];
-        }
-      });
-    }
-    
-    return paths;
-  };
-
-  const getValueAtPath = (obj: any, path: string[]): any => {
-    return path.reduce((current, key) => current?.[key], obj);
-  };
-
-  const parseJsonData = (data: any, path?: JsonPath): string[][] => {
-    let targetData = path ? getValueAtPath(data, path.path) : data;
-    let rows: string[][] = [];
-    
-    if (Array.isArray(targetData)) {
-      if (targetData.length > 0 && typeof targetData[0] === 'object') {
-        const headers = Object.keys(targetData[0]);
-        rows = [
-          headers,
-          ...targetData.map(item => headers.map(header => String(item[header] ?? '')))
-        ];
-      }
-      else if (targetData.length > 0 && Array.isArray(targetData[0])) {
-        rows = targetData.map(row => row.map((cell: unknown) => String(cell ?? '')));
-      }
-    }
-    else if (typeof targetData === 'object' && targetData !== null) {
-      const headers = Object.keys(targetData);
-      rows = [
-        headers,
-        headers.map(header => String(targetData[header] ?? ''))
-      ];
-    }
-
-    return rows;
-  };
-
-  const parseCsv = async (file: File): Promise<ParsedData> => {
-    return new Promise((resolve, reject) => {
-      Papa.parse(file, {
-        complete: (results) => {
-          resolve({
-            headers: results.data[0] as string[],
-            rows: results.data.slice(1) as string[][],
-          });
-        },
-        error: () => {
-          reject(new Error('Failed to parse CSV file'));
-        },
-      });
-    });
-  };
-
-  const parseTxt = async (file: File): Promise<ParsedData> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const content = e.target?.result as string;
-          const lines = content.split('\n').map(line => line.trim()).filter(Boolean);
-          const delimiter = lines[0].includes('\t') ? '\t' : ',';
-          
-          // Use Papa Parse for consistent parsing
-          Papa.parse(content, {
-            delimiter: delimiter,
-            complete: (results) => {
-              resolve({
-                headers: results.data[0] as string[],
-                rows: results.data.slice(1) as string[][],
-              });
-            },
-            error: () => {
-              reject(new Error('Failed to parse text file'));
-            }
-          });
-        } catch (error) {
-          reject(new Error('Failed to parse text file'));
-        }
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsText(file);
-    });
-  };
-
-  const addAuditLog = (action: string, details: string, data?: { type: 'row_deletion'; rows: string[][]; indices: number[] }) => {
-    setAuditLogs(prev => [{
-      timestamp: new Date(),
-      action,
-      details,
-      data
-    }, ...prev]);
-  };
-
-  const handleFileSelect = (file: File) => {
-    setShowFileUploader(false);
-    addAuditLog('File Selected', `Selected file: ${file.name}`);
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        if (file.type === 'application/json') {
-          const jsonData = JSON.parse(e.target?.result as string);
-          setOriginalJsonData(jsonData);
-          
-          const paths = findJsonPaths(jsonData);
-          setAvailablePaths(paths);
-          
-          if (paths.length > 0) {
-            const firstPath = paths[0];
-            setSelectedPath(firstPath);
-            const rows = parseJsonData(jsonData, firstPath);
-            if (rows.length === 0) {
-              throw new Error('No valid data found in selected JSON path');
-            }
-            setRawData({ rows });
-            parseDataWithHeaderRow(rows, 0);
-          } else {
-            const rows = parseJsonData(jsonData);
-            if (rows.length === 0) {
-              throw new Error('No valid data found in JSON file');
-            }
-            setRawData({ rows });
-            parseDataWithHeaderRow(rows, 0);
-          }
-        } else {
-          const text = e.target?.result as string;
-          Papa.parse(text, {
-            complete: (results) => {
-              const rows = results.data as string[][];
-              setRawData({ rows });
-              parseDataWithHeaderRow(rows, 0);
-            },
-            error: () => {
-              setError('Error parsing file. Please check the format.');
-            }
-          });
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error parsing file. Please check the format.');
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleFileUpload = async (fileOrEvent: File | React.ChangeEvent<HTMLInputElement>) => {
-    let file: File;
-    if (fileOrEvent instanceof File) {
-      file = fileOrEvent;
-    } else {
-      const selectedFile = fileOrEvent.target.files?.[0];
-      if (!selectedFile) return;
-      file = selectedFile;
-    }
-
-    setError('');
-    setParsedData(null);
-    setCurrentPage(1);
-    setOriginalJsonData(null);
-    setAvailablePaths([]);
-    setSelectedPath(null);
-    
-    if (!file) return;
-
-    if (!['text/csv', 'text/plain', 'application/json'].includes(file.type)) {
-      setError('Please upload a CSV, TXT, or JSON file');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        if (file.type === 'application/json') {
-          const jsonData = JSON.parse(e.target?.result as string);
-          setOriginalJsonData(jsonData);
-          
-          const paths = findJsonPaths(jsonData);
-          setAvailablePaths(paths);
-          
-          if (paths.length > 0) {
-            const firstPath = paths[0];
-            setSelectedPath(firstPath);
-            const rows = parseJsonData(jsonData, firstPath);
-            if (rows.length === 0) {
-              throw new Error('No valid data found in selected JSON path');
-            }
-            setRawData({ rows });
-            parseDataWithHeaderRow(rows, 0);
-          } else {
-            const rows = parseJsonData(jsonData);
-            if (rows.length === 0) {
-              throw new Error('No valid data found in JSON file');
-            }
-            setRawData({ rows });
-            parseDataWithHeaderRow(rows, 0);
-          }
-        } else {
-          const text = e.target?.result as string;
-          const lines = text.split('\n');
-          const rows = lines
-            .filter(line => line.trim())
-            .map(line => line.split(',').map(cell => cell.trim()));
-
-          setRawData({ rows });
-          parseDataWithHeaderRow(rows, 0);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error parsing file. Please check the format.');
-      }
-    };
-
-    reader.readAsText(file);
-  };
-
-  const handleApiFetch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setParsedData(null);
-    setCurrentPage(1);
+  const handleFileSelect = async (file: File) => {
     setIsLoading(true);
-    setOriginalJsonData(null);
-    setAvailablePaths([]);
-    setSelectedPath(null);
-
+    setError('');
     try {
-      const response = await fetch(apiUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      setOriginalJsonData(data);
-      
-      const paths = findJsonPaths(data);
-      setAvailablePaths(paths);
-      
-      if (paths.length > 0) {
-        const firstPath = paths[0];
-        setSelectedPath(firstPath);
-        const rows = parseJsonData(data, firstPath);
-        if (rows.length === 0) {
-          throw new Error('No valid data found in selected JSON path');
+      const fileData = await readFile(file);
+      setRawData(fileData);
+      onFileSelect(file);
+
+      if (fileData.type === 'json') {
+        setOriginalJsonData(fileData.data);
+        const paths = extractJsonPaths(fileData.data);
+        setAvailablePaths(paths);
+        if (paths.length > 0) {
+          setSelectedPath(paths[0]);
+          const parsedData = parseJsonData(fileData.data, paths[0].path);
+          setParsedData(parsedData);
+          setOriginalRows(parsedData.rows);
         }
-        setRawData({ rows });
-        parseDataWithHeaderRow(rows, 0);
       } else {
-        const rows = parseJsonData(data);
-        if (rows.length === 0) {
-          throw new Error('No data found in API response');
-        }
-        setRawData({ rows });
-        parseDataWithHeaderRow(rows, 0);
+        const parsedData = parseFileData(fileData);
+        setParsedData(parsedData);
+        setOriginalRows(parsedData.rows);
       }
+      setShowFileUploader(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data from API');
+      setError(err instanceof Error ? err.message : 'Failed to process file');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePathChange = (path: JsonPath) => {
-    if (!originalJsonData) return;
-    
-    setSelectedPath(path);
-    const rows = parseJsonData(originalJsonData, path);
-    if (rows.length > 0) {
-      setRawData({ rows });
-      parseDataWithHeaderRow(rows, 0);
-      setCurrentPage(1);
-    } else {
-      setError('No valid data found in selected JSON path');
-    }
-  };
-
-  const formatPathDisplay = (path: string[]): string => {
-    return path.length === 0 ? 'root' : path.join(' → ');
-  };
-
-  const parseDataWithHeaderRow = (rows: string[][], headerRowIndex: number) => {
-    if (rows.length <= headerRowIndex) {
-      setError('Selected header row index is out of bounds');
-      return;
-    }
-
-    const headers = rows[headerRowIndex];
-    const dataRows = rows.slice(headerRowIndex + 1);
-
-    // Store original rows for sorting reset
-    setOriginalRows(dataRows);
-    setParsedData({
-      headers,
-      rows: dataRows
-    });
-  };
-
-  const handleHeaderRowChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newHeaderRow = parseInt(event.target.value, 10);
-    setSelectedHeaderRow(newHeaderRow);
-    setCurrentPage(1);
-    if (rawData) {
-      parseDataWithHeaderRow(rawData.rows, newHeaderRow);
-    }
-  };
-
-  const handleExport = () => {
-    if (!parsedData) return;
-
-    const csvContent = [
-      parsedData.headers.join(','),
-      ...parsedData.rows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'exported-data.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const removeColumn = (columnIndex: number) => {
-    if (!parsedData) return;
-    setParsedData({
-      headers: parsedData.headers.filter((_, i) => i !== columnIndex),
-      rows: parsedData.rows.map(row => row.filter((_, i) => i !== columnIndex))
-    });
-  };
-
-  const removeRow = (rowIndex: number) => {
-    if (!parsedData) return;
-    setParsedData({
-      headers: parsedData.headers,
-      rows: parsedData.rows.filter((_, i) => i !== rowIndex)
-    });
-  };
-
-  const startEditingHeader = (index: number) => {
-    if (!parsedData) return;
-    setEditingHeader({ index, value: parsedData.headers[index] });
-  };
-
-  const handleColumnDragStart = (index: number) => {
-    setDraggedColumnIndex(index);
-  };
-
-  const handleColumnDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (draggedColumnIndex === null || draggedColumnIndex === index) return;
-    setEditableColumns((prev: EditableColumn[]) => {
-      const newColumns = [...prev];
-      const draggedColumn = newColumns[draggedColumnIndex as number];
-      newColumns.splice(draggedColumnIndex as number, 1);
-      newColumns.splice(index, 0, draggedColumn);
-      return newColumns;
-    });
-    setDraggedColumnIndex(index);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedColumnIndex(null);
-    setShowSqlPreview(false);
-    setGeneratedSql('');
-    setHasUnsavedChanges(true);
-  };
-
-  const sortRowsByColumn = (columnIndex: number) => {
-    if (!parsedData) return;
-
-    let newDirection: 'asc' | 'desc' | null;
-    let sortedRows: string[][];
-
-    // Determine new sort direction
-    if (sortState.column !== columnIndex) {
-      newDirection = 'asc';
-    } else {
-      switch (sortState.direction) {
-        case 'asc':
-          newDirection = 'desc';
-          break;
-        case 'desc':
-          newDirection = null;
-          break;
-        default:
-          newDirection = 'asc';
-      }
-    }
-
-    // Sort the rows based on the new direction
-    if (newDirection === null) {
-      sortedRows = [...originalRows]; // Use originalRows to restore unsorted state
-    } else {
-      sortedRows = [...parsedData.rows].sort((a, b) => {
-        const valueA = a[columnIndex]?.trim() ?? '';
-        const valueB = b[columnIndex]?.trim() ?? '';
-
-        if (!valueA && !valueB) return 0;
-        if (!valueA) return 1;
-        if (!valueB) return -1;
-
-        const numA = parseFloat(valueA);
-        const numB = parseFloat(valueB);
-
-        if (!isNaN(numA) && !isNaN(numB)) {
-          return newDirection === 'asc' ? numA - numB : numB - numA;
-        }
-
-        return newDirection === 'asc' 
-          ? valueA.toLowerCase().localeCompare(valueB.toLowerCase())
-          : valueB.toLowerCase().localeCompare(valueA.toLowerCase());
-      });
-    }
-
-    setSortState({ column: columnIndex, direction: newDirection });
-    setParsedData({
-      ...parsedData,
-      rows: sortedRows
-    });
-  };
-
-  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setCurrentPage(1);
-  };
-
-  const handleDatabaseOperation = async (databaseId: string, tableId: string) => {
-    // TODO: Implement actual database insertion
-    console.log('Inserting data into database:', databaseId, 'table:', tableId);
-  };
-
-  const handleGenerateSql = (databaseType: string, tableName: string, columns: ColumnInfo[]) => {
-    // TODO: Implement SQL generation
-    console.log('Generating SQL for:', databaseType, 'table:', tableName, 'columns:', columns);
-  };
-
-  const saveHeaderEdit = () => {
-    if (!editingHeader || !parsedData) return;
-    
-    const newHeaders = [...parsedData.headers];
-    newHeaders[editingHeader.index] = editingHeader.value;
-    
-    setParsedData({
-      ...parsedData,
-      headers: newHeaders
-    });
-    
-    setEditingHeader(null);
-  };
-
-  // Add notification component
-  const Notification: React.FC<NotificationProps> = ({ message, type, onClose }) => (
-    <div 
-      className={`fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 transform transition-all duration-300 ease-in-out ${
-        type === 'success' 
-          ? 'bg-green-50 border border-green-200 text-green-800' 
-          : 'bg-red-50 border border-red-200 text-red-800'
-      }`}
-    >
-      <div className="flex-1 flex items-center gap-2">
-        {type === 'success' ? (
-          <CheckCircle className="w-5 h-5 text-green-500" />
-        ) : (
-          <AlertCircle className="w-5 h-5 text-red-500" />
-        )}
-        <span className="text-sm font-medium">{message}</span>
-      </div>
-      <button
-        onClick={onClose}
-        className="text-gray-400 hover:text-gray-600 transition-colors"
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-  );
-
-  // Add scroll function
-  const scrollToSqlPreview = () => {
-    if (sqlPreviewRef.current) {
-      sqlPreviewRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  // Add generateSql function
-  const generateSql = () => {
-    if (!selectedConnectionInfo || !newTableName || !editableColumns.length) return;
-
-    const dbType = selectedConnectionInfo.type;
-    const columns = editableColumns.map(col => {
-      const typeDef = dataTypeOptions[dbType][col.type];
-      let typeString = col.type;
-      
-      if (typeDef.hasLength && col.length) {
-        typeString += `(${col.length})`;
-      } else if (typeDef.hasPrecision && col.precision) {
-        if (typeDef.hasScale && col.scale) {
-          typeString += `(${col.precision},${col.scale})`;
-        } else {
-          typeString += `(${col.precision})`;
-        }
-      }
-
-      return `    [${col.name}] ${typeString} ${col.isNullable ? 'NULL' : 'NOT NULL'}`;
-    });
-
-    const sql = `CREATE TABLE [${newTableName}] (\n${columns.join(',\n')}\n);`;
-    setGeneratedSql(sql);
-    setLastGeneratedSql(sql);
-    setShowSqlPreview(true);
-    setShowSuccessNotification(true);
-    setHasUnsavedChanges(false);
-
-    // Add a small delay to ensure the SQL preview is rendered before scrolling
-    setTimeout(() => {
-      scrollToSqlPreview();
-    }, 100);
-
-    setTimeout(() => {
-      setShowSuccessNotification(false);
-    }, 3000);
-  };
-
-  // Add copy function
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(generatedSql);
-    setShowCopyAnimation(true);
-    setTimeout(() => setShowCopyAnimation(false), 2000);
-  };
-
-  // Add create table function
-  const handleCreateTable = () => {
-    // TODO: Implement actual table creation
-    setNotification({ message: 'Create table SQL executed', type: 'success' });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // Add handleResetChanges function
-  const handleResetChanges = () => {
-    if (lastGeneratedSql) {
-      setGeneratedSql(lastGeneratedSql);
-      setHasUnsavedChanges(false);
-      setNotification({ message: 'Changes reset to last generated SQL', type: 'success' });
-      setTimeout(() => setNotification(null), 3000);
-    }
-  };
-
-  // Add date format conversion function
-  const handleDateFormatConversion = async (sourceFormat: string, targetFormat: string) => {
-    if (!parsedData || !selectedColumnForDateCorrection) return;
-
-    const columnIndex = parsedData.headers.findIndex(
-      header => header === selectedColumnForDateCorrection.name
-    );
-    
-    if (columnIndex === -1) return;
-
-    let convertedCount = 0;
-    const newRows = parsedData.rows.map(row => {
-      const newRow = [...row];
-      const dateValue = row[columnIndex];
-      
-      // Skip empty values
-      if (!dateValue || dateValue.trim() === '') {
-        return newRow;
-      }
-      
-      try {
-        // Parse the date according to source format
-        const date = parse(dateValue, sourceFormat, new Date());
-        if (isValid(date)) {
-          // Format the date according to target format
-          newRow[columnIndex] = format(date, targetFormat);
-          convertedCount++;
-        }
-      } catch (error) {
-        console.error('Error converting date:', error);
-      }
-      
-      return newRow;
-    });
-
-    // Update the parsedData state with the new rows
-    setParsedData(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        rows: newRows
-      };
-    });
-
-    addAuditLog(
-      'Date Format Correction',
-      `Converted ${convertedCount} dates in column "${selectedColumnForDateCorrection.name}" from ${sourceFormat} to ${targetFormat}`
-    );
-
-    // Show notification with conversion results
-    setNotification({
-      message: `Successfully converted ${convertedCount} dates. Empty values were preserved.`,
-      type: 'success'
-    });
-  };
-
-  const handleEmptyValueDeletion = async (rowIndices: number[]) => {
-    if (!parsedData) return;
-    
-    // Store the rows being deleted for potential reversion
-    const deletedRows = rowIndices.map(index => parsedData.rows[index]);
-    
-    // Remove the rows
-    const newRows = parsedData.rows.filter((_, index) => !rowIndices.includes(index));
-    
-    setParsedData({
-      headers: parsedData.headers,
-      rows: newRows
-    });
-    
-    // Add to audit log with the deleted rows data
-    addAuditLog('Rows Deleted', `Deleted ${rowIndices.length} rows with empty values`, {
-      type: 'row_deletion',
-      rows: deletedRows,
-      indices: rowIndices
-    });
-    
-    setCurrentPage(1);
-
-    // Show notification
-    setNotification({
-      message: `Successfully deleted ${rowIndices.length} rows with empty values`,
-      type: 'success'
-    });
-  };
-
-  const handleRevertDeletion = (entry: AuditLogEntry) => {
-    if (!parsedData || !entry.data || entry.data.type !== 'row_deletion') return;
-    
-    // Reinsert the deleted rows at their original positions
-    const newRows = [...parsedData.rows];
-    entry.data.indices.forEach((originalIndex, i) => {
-      newRows.splice(originalIndex, 0, entry.data!.rows[i]);
-    });
-    
-    setParsedData({
-      headers: parsedData.headers,
-      rows: newRows
-    });
-    
-    // Add a new audit log entry for the reversion
-    addAuditLog('Deletion Reverted', `Reverted deletion of ${entry.data.rows.length} rows`);
-
-    // Show notification
-    setNotification({
-      message: `Successfully reverted deletion of ${entry.data.rows.length} rows`,
-      type: 'success'
-    });
-  };
+  // ... rest of the component code ...
 
   return (
-    <div className="h-full w-full">
+    <div className="flex-1 overflow-auto">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={onBack}
+            className="flex items-center text-gray-600 hover:text-gray-900"
+          >
+            <ChevronLeft className="w-5 h-5 mr-1" />
+            Back to Pipelines
+          </button>
+          {pipeline && (
+            <div className="flex items-center space-x-2">
+              <GitBranch className="w-5 h-5 text-gray-500" />
+              <span className="text-lg font-medium text-gray-900">{pipeline.name}</span>
+            </div>
+          )}
+        </div>
+      </div>
       {showFileUploader ? (
         <div className="h-full flex items-center justify-center">
           <FileImport onFileSelect={handleFileSelect} />

@@ -76,3 +76,59 @@ export const toCamelCase = (str: string): string => {
   const pascal = toPascalCase(str);
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 };
+
+export interface JsonPath {
+  path: string[];
+  type: 'array' | 'object';
+}
+
+export const extractJsonPaths = (obj: any, currentPath: string[] = []): JsonPath[] => {
+  let paths: JsonPath[] = [];
+  
+  if (Array.isArray(obj)) {
+    if (obj.length > 0 && typeof obj[0] === 'object' && obj[0] !== null) {
+      paths.push({ path: currentPath, type: 'array' });
+    }
+    obj.forEach((item, index) => {
+      if (typeof item === 'object' && item !== null) {
+        paths = [...paths, ...extractJsonPaths(item, [...currentPath, index.toString()])];
+      }
+    });
+  } else if (typeof obj === 'object' && obj !== null) {
+    paths.push({ path: currentPath, type: 'object' });
+    Object.entries(obj).forEach(([key, value]) => {
+      if (typeof value === 'object' && value !== null) {
+        paths = [...paths, ...extractJsonPaths(value, [...currentPath, key])];
+      }
+    });
+  }
+  
+  return paths;
+};
+
+export const getValueAtPath = (obj: any, path: string[]): any => {
+  return path.reduce((current, key) => current?.[key], obj);
+};
+
+export const parseJsonData = (data: any, path?: JsonPath): { headers: string[]; rows: string[][] } => {
+  let targetData = path ? getValueAtPath(data, path.path) : data;
+  let rows: string[][] = [];
+  let headers: string[] = [];
+  
+  if (Array.isArray(targetData)) {
+    if (targetData.length > 0 && typeof targetData[0] === 'object') {
+      headers = Object.keys(targetData[0]);
+      rows = targetData.map(item => headers.map(header => String(item[header] ?? '')));
+    }
+    else if (targetData.length > 0 && Array.isArray(targetData[0])) {
+      headers = targetData[0].map((_: any, i: number) => `Column ${i + 1}`);
+      rows = targetData.map(row => row.map((cell: unknown) => String(cell ?? '')));
+    }
+  }
+  else if (typeof targetData === 'object' && targetData !== null) {
+    headers = Object.keys(targetData);
+    rows = [headers.map(header => String(targetData[header] ?? ''))];
+  }
+
+  return { headers, rows };
+};
