@@ -4,6 +4,8 @@ import { X as CloseIcon } from 'lucide-react';
 import DataImporter from './DataImporter';
 import DatabaseConnections from './DatabaseConnections';
 import { DatabaseConnection } from './DatabaseConnections';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 interface DashboardLayoutProps {
   // Remove the children requirement
@@ -307,7 +309,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
   });
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
 
-  const handleCreateProject = (projectName: string, type: 'file' | 'api' | 'database', file?: File, description?: string, pipelineId?: string) => {
+  const handleCreateProject = async (projectName: string, type: 'file' | 'api' | 'database', file?: File, description?: string, pipelineId?: string) => {
     const finalProjectName = projectName.trim() || (file ? file.name : 'Untitled Project');
     
     if (pipelineId) {
@@ -319,6 +321,63 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
       ));
     } else {
       // Create new pipeline
+      let parsedData: ParsedData | null = null;
+      let rawData: RawFileData | null = null;
+      let originalJsonData: any = null;
+      let availablePaths: JsonPath[] = [];
+      let selectedPath: JsonPath | null = null;
+
+      if (file) {
+        try {
+          const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+          if (['.xlsx', '.xls'].includes(fileExtension)) {
+            const reader = new FileReader();
+            const result = await new Promise<ArrayBuffer>((resolve, reject) => {
+              reader.onload = (e) => resolve(e.target?.result as ArrayBuffer);
+              reader.onerror = reject;
+              reader.readAsArrayBuffer(file);
+            });
+            const workbook = XLSX.read(new Uint8Array(result), { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+            parsedData = {
+              headers: jsonData[0] as string[],
+              rows: jsonData.slice(1) as string[][]
+            };
+            rawData = { rows: [parsedData.headers, ...parsedData.rows] };
+          } else if (fileExtension === '.csv') {
+            const result = await new Promise<Papa.ParseResult<string[]>>((resolve, reject) => {
+              Papa.parse(file, {
+                complete: resolve,
+                error: reject
+              });
+            });
+            parsedData = {
+              headers: result.data[0],
+              rows: result.data.slice(1)
+            };
+            rawData = { rows: [parsedData.headers, ...parsedData.rows] };
+          } else {
+            const reader = new FileReader();
+            const content = await new Promise<string>((resolve, reject) => {
+              reader.onload = (e) => resolve(e.target?.result as string);
+              reader.onerror = reject;
+              reader.readAsText(file);
+            });
+            const lines = content.split('\n').map(line => line.trim()).filter(Boolean);
+            const delimiter = lines[0].includes('\t') ? '\t' : ',';
+            const parsedLines = lines.map(line => line.split(delimiter));
+            parsedData = {
+              headers: parsedLines[0],
+              rows: parsedLines.slice(1)
+            };
+            rawData = { rows: [parsedData.headers, ...parsedData.rows] };
+          }
+        } catch (error) {
+          console.error('Error parsing file:', error);
+        }
+      }
+
       const newPipeline: Pipeline = {
         id: Math.random().toString(36).substr(2, 9),
         name: finalProjectName,
@@ -326,7 +385,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
         type,
         createdAt: new Date(),
         fileName: file?.name,
-        createdBy: 'Jake Gerold' // This would come from your auth system
+        createdBy: 'Jake Gerold', // This would come from your auth system
+        data: {
+          parsedData,
+          rawData,
+          originalJsonData,
+          availablePaths,
+          selectedPath
+        }
       };
       setPipelines(prev => [...prev, newPipeline]);
     }
@@ -430,8 +496,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                   // Pipeline List
                   <div className="divide-y divide-gray-200">
                     {pipelines.map((pipeline) => (
-                      <div className="flex items-center group">
-                        <div key={pipeline.id} className={`flex-1 px-4 py-3 transition-colors border-r ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
+                      <div key={pipeline.id} className="flex items-center group">
+                        <div className={`flex-1 px-4 py-3 transition-colors border-r ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-4">
                               <div className="min-w-[100px]">
@@ -548,7 +614,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
               ));
             }}
             initialData={selectedPipelineData}
-            initialFile={selectedPipeline?.fileName ? new File([], selectedPipeline.fileName) : undefined}
+            initialFile={selectedPipeline?.fileName ? new File([new Blob()], selectedPipeline.fileName) : undefined}
             pipeline={selectedPipeline || undefined}
             onBack={() => {
               setSelectedDrawerItem({ name: 'Pipelines', icon: <GitBranch size={14} />, breadcrumb: [] });
@@ -638,7 +704,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
           <div className="h-4 w-px bg-gray-300"></div>
           <div className={`flex items-center space-x-2 text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-600'}`}>
             {selectedDrawerItem.icon}
-            {selectedDrawerItem.breadcrumb ? (
+            {selectedDrawerItem.name === 'DataImporter' && selectedPipeline ? (
+              <div className="flex items-center space-x-2">
+                <span>Pipelines</span>
+                <ChevronRight size={14} />
+                <span className="text-gray-700">{selectedPipeline.name}</span>
+              </div>
+            ) : selectedDrawerItem.breadcrumb ? (
               <div className="flex items-center space-x-1">
                 {selectedDrawerItem.breadcrumb.map((item, index) => (
                   <React.Fragment key={index}>

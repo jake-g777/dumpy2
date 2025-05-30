@@ -77,32 +77,37 @@ export const toCamelCase = (str: string): string => {
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 };
 
-export interface JsonPath {
+interface JsonPath {
   path: string[];
   type: 'array' | 'object';
 }
 
-export const extractJsonPaths = (obj: any, currentPath: string[] = []): JsonPath[] => {
-  let paths: JsonPath[] = [];
-  
-  if (Array.isArray(obj)) {
-    if (obj.length > 0 && typeof obj[0] === 'object' && obj[0] !== null) {
-      paths.push({ path: currentPath, type: 'array' });
+export const extractJsonPaths = (data: any): JsonPath[] => {
+  const paths: JsonPath[] = [];
+
+  const traverse = (obj: any, currentPath: string[] = []) => {
+    if (Array.isArray(obj)) {
+      paths.push({
+        path: currentPath,
+        type: 'array'
+      });
+      
+      if (obj.length > 0) {
+        traverse(obj[0], [...currentPath, '0']);
+      }
+    } else if (obj && typeof obj === 'object') {
+      paths.push({
+        path: currentPath,
+        type: 'object'
+      });
+
+      Object.keys(obj).forEach(key => {
+        traverse(obj[key], [...currentPath, key]);
+      });
     }
-    obj.forEach((item, index) => {
-      if (typeof item === 'object' && item !== null) {
-        paths = [...paths, ...extractJsonPaths(item, [...currentPath, index.toString()])];
-      }
-    });
-  } else if (typeof obj === 'object' && obj !== null) {
-    paths.push({ path: currentPath, type: 'object' });
-    Object.entries(obj).forEach(([key, value]) => {
-      if (typeof value === 'object' && value !== null) {
-        paths = [...paths, ...extractJsonPaths(value, [...currentPath, key])];
-      }
-    });
-  }
-  
+  };
+
+  traverse(data);
   return paths;
 };
 
@@ -110,25 +115,29 @@ export const getValueAtPath = (obj: any, path: string[]): any => {
   return path.reduce((current, key) => current?.[key], obj);
 };
 
-export const parseJsonData = (data: any, path?: JsonPath): { headers: string[]; rows: string[][] } => {
-  let targetData = path ? getValueAtPath(data, path.path) : data;
-  let rows: string[][] = [];
-  let headers: string[] = [];
-  
-  if (Array.isArray(targetData)) {
-    if (targetData.length > 0 && typeof targetData[0] === 'object') {
-      headers = Object.keys(targetData[0]);
-      rows = targetData.map(item => headers.map(header => String(item[header] ?? '')));
-    }
-    else if (targetData.length > 0 && Array.isArray(targetData[0])) {
-      headers = targetData[0].map((_: any, i: number) => `Column ${i + 1}`);
-      rows = targetData.map(row => row.map((cell: unknown) => String(cell ?? '')));
-    }
-  }
-  else if (typeof targetData === 'object' && targetData !== null) {
-    headers = Object.keys(targetData);
-    rows = [headers.map(header => String(targetData[header] ?? ''))];
+export const parseJsonData = (data: any, path: string[]): { headers: string[]; rows: string[][] } => {
+  let current = data;
+  for (const key of path) {
+    current = current[key];
   }
 
-  return { headers, rows };
+  if (Array.isArray(current)) {
+    if (current.length === 0) {
+      return { headers: [], rows: [] };
+    }
+
+    const firstItem = current[0];
+    const headers = Object.keys(firstItem);
+    const rows = current.map(item => 
+      headers.map(header => String(item[header] ?? ''))
+    );
+
+    return { headers, rows };
+  } else if (typeof current === 'object' && current !== null) {
+    const headers = Object.keys(current);
+    const rows = [headers.map(header => String(current[header] ?? ''))];
+    return { headers, rows };
+  }
+
+  return { headers: [], rows: [] };
 };

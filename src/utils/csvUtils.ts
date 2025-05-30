@@ -6,20 +6,25 @@ export interface ParsedData {
   rows: string[][];
 }
 
-export const parseFileData = (fileData: RawFileData): ParsedData => {
-  if (fileData.type === 'json') {
-    throw new Error('Cannot parse JSON data with parseFileData');
+export const parseFileData = (data: string[][]): ParsedData => {
+  if (!data || data.length === 0) {
+    return { headers: [], rows: [] };
   }
 
-  if (!fileData.rows || fileData.rows.length === 0) {
-    throw new Error('No data found in file');
+  // Assume first row is headers
+  const headers = data[0].map(header => header.trim());
+  const rows = data.slice(1);
+
+  return { headers, rows };
+};
+
+export const parseDataWithHeaderRow = (data: string[][], headerRowIndex: number): ParsedData => {
+  if (!data || data.length === 0 || headerRowIndex >= data.length) {
+    return { headers: [], rows: [] };
   }
 
-  const headers = fileData.rows[0];
-  const rows = fileData.rows.slice(1);
+  const headers = data[headerRowIndex].map(header => header.trim());
+  const rows = data.slice(headerRowIndex + 1);
 
-  return {
-    headers,
-    rows
-  };
+  return { headers, rows };
 }; 
