@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, X, Home, Database, Link2, Settings, ChevronDown, ChevronRight, FileUp, Globe, GitBranch, Search, Filter, RefreshCw, Sun, Moon, Github, Twitter, Linkedin, HelpCircle, Wrench, ChevronLeft } from 'lucide-react';
+import { Menu, X, Home, Database, Link2, Settings, ChevronDown, ChevronRight, FileUp, Globe, GitBranch, Search, Filter, RefreshCw, Sun, Moon, Github, Twitter, Linkedin, HelpCircle, ChevronLeft, User, LogOut, Shield, Wrench } from 'lucide-react';
 import { X as CloseIcon } from 'lucide-react';
 import DataImporter from './DataImporter';
 import DatabaseConnections from './DatabaseConnections';
-import { DatabaseConnection } from './DatabaseConnections';
+import { FrontendDatabaseConnection } from './DatabaseConnections';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DashboardLayoutProps {
   // Remove the children requirement
@@ -283,10 +284,12 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ isOpen, onClose
 };
 
 const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
+  const { user, databaseUserId, userAccessLevel, logout } = useAuth();
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [isActiveJobsOpen, setIsActiveJobsOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [editingPipeline, setEditingPipeline] = useState<Pipeline | undefined>();
   const [selectedDrawerItem, setSelectedDrawerItem] = useState<{ name: string; icon: React.ReactNode; breadcrumb?: string[] }>({ 
@@ -406,7 +409,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
     setIsModalOpen(true);
   };
 
-  const handleDatabaseConnection = (connection: DatabaseConnection) => {
+  const handleDatabaseConnection = (connection: FrontendDatabaseConnection) => {
     console.log('Connected to database:', connection);
   };
 
@@ -424,6 +427,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
       availablePaths: pipeline.data?.availablePaths || [],
       selectedPath: pipeline.data?.selectedPath || null
     });
+  };
+
+  const getUserAccessLevelText = (level: number | null) => {
+    switch (level) {
+      case 1:
+        return 'Standard';
+      case 2:
+        return 'Premium';
+      case 3:
+        return 'Enterprise';
+      default:
+        return 'Standard';
+    }
   };
 
   const renderContent = () => {
@@ -726,13 +742,74 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
             )}
           </div>
         </div>
-        <button
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          className={`p-1.5 rounded-md ${isDarkMode ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}
-          title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className={`flex items-center space-x-2 px-2 py-1 rounded-md ${
+                isDarkMode 
+                  ? 'text-gray-300 hover:bg-gray-800' 
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <User size={16} />
+              <span className="text-sm">{user?.email}</span>
+              <ChevronDown size={14} className={`transform transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showUserMenu && (
+              <div className={`absolute right-0 mt-1 w-64 rounded-md shadow-lg ${
+                isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'
+              }`}>
+                <div className="py-1">
+                  <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+                      {user?.displayName || user?.email}
+                    </p>
+                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {user?.email}
+                    </p>
+                  </div>
+                  
+                  <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className="flex items-center space-x-2">
+                      <Shield size={14} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                      <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Access Level: {getUserAccessLevelText(userAccessLevel)}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <Database size={14} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                      <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Database ID: {databaseUserId || 'Not available'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={logout}
+                    className={`w-full flex items-center space-x-2 px-4 py-2 text-sm ${
+                      isDarkMode 
+                        ? 'text-red-400 hover:bg-gray-700' 
+                        : 'text-red-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <LogOut size={14} />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className={`p-1.5 rounded-md ${isDarkMode ? 'text-gray-200 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}
+            title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
       </div>
 
       {/* Main Content Area */}

@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using DumpyServer.Models;
 using Microsoft.Extensions.Logging;
+using Oracle.ManagedDataAccess.Client;
 
 namespace DumpyServer.Services;
 
@@ -77,6 +78,7 @@ public class DatabaseConnectionManager : IDatabaseConnectionManager
             "sqlserver" => new SqlConnection(connectionString),
             "postgresql" => new NpgsqlConnection(connectionString),
             "mysql" => new MySqlConnection(connectionString),
+            "oracle" => new OracleConnection(connectionString),
             _ => throw new ArgumentException($"Unsupported database type: {connection.Type}")
         };
 
@@ -96,37 +98,34 @@ public class DatabaseConnectionManager : IDatabaseConnectionManager
 
     private string GetConnectionString(DatabaseConnection connection)
     {
-        // Encrypt the password before using it in the connection string
         var encryptedPassword = _encryptionService.Encrypt(connection.Password);
-
+        
         return connection.Type.ToLower() switch
         {
-            "sqlserver" => new SqlConnectionStringBuilder
-            {
-                DataSource = connection.Host,
-                InitialCatalog = connection.Database,
-                UserID = connection.Username,
-                Password = encryptedPassword,
-                TrustServerCertificate = true, // Only in development
-                Encrypt = true
-            }.ConnectionString,
-
-            "postgresql" => new NpgsqlConnectionStringBuilder
-            {
-                Host = connection.Host,
-                Database = connection.Database,
-                Username = connection.Username,
-                Password = encryptedPassword,
-                SslMode = SslMode.Require
-            }.ConnectionString,
-
             "mysql" => new MySqlConnectionStringBuilder
             {
                 Server = connection.Host,
+                Port = (uint)connection.Port,
                 Database = connection.Database,
                 UserID = connection.Username,
                 Password = encryptedPassword,
-                SslMode = MySqlSslMode.Required
+                SslMode = MySqlSslMode.Disabled
+            }.ConnectionString,
+
+            "sqlserver" => new SqlConnectionStringBuilder
+            {
+                DataSource = $"{connection.Host},{connection.Port}",
+                InitialCatalog = connection.Database,
+                UserID = connection.Username,
+                Password = encryptedPassword,
+                TrustServerCertificate = connection.Ssl
+            }.ConnectionString,
+
+            "oracle" => new OracleConnectionStringBuilder
+            {
+                DataSource = $"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={connection.Host})(PORT={connection.Port}))(CONNECT_DATA=(SERVICE_NAME={connection.Database})))",
+                UserID = connection.Username,
+                Password = encryptedPassword
             }.ConnectionString,
 
             _ => throw new ArgumentException($"Unsupported database type: {connection.Type}")

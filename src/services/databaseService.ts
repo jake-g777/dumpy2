@@ -1,7 +1,7 @@
 import { DatabaseConnection, DatabaseConnectionInput } from '../components/DatabaseConnections';
 
 // Update the API base URL to point to your C# backend
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5176/api';
+const API_BASE_URL = 'http://localhost:5176/api';
 
 interface ConnectionTestResult {
   success: boolean;

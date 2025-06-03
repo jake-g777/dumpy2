@@ -13,7 +13,8 @@ namespace DumpyServer.Services
             _handlers = new Dictionary<string, IDatabaseConnectionHandler>
             {
                 { "mysql", new MySqlConnectionHandler() },
-                { "sqlserver", new SqlServerConnectionHandler() }
+                { "sqlserver", new SqlServerConnectionHandler() },
+                { "oracle", new OracleConnectionHandler() }
                 // Add more handlers as needed
             };
         }
