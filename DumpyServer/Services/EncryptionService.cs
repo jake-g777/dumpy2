@@ -37,7 +37,8 @@ public class EncryptionService : IEncryptionService
         var plainBytes = Encoding.UTF8.GetBytes(plainText);
         var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
         
-        return Convert.ToBase64String(cipherBytes);
+        // Convert to hex string to match frontend format
+        return BitConverter.ToString(cipherBytes).Replace("-", "");
     }
 
     public string Decrypt(string cipherText)
@@ -47,9 +48,15 @@ public class EncryptionService : IEncryptionService
         aes.IV = _iv;
 
         using var decryptor = aes.CreateDecryptor();
-        var cipherBytes = Convert.FromBase64String(cipherText);
-        var plainBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
         
+        // Convert from hex string to byte array
+        var cipherBytes = new byte[cipherText.Length / 2];
+        for (int i = 0; i < cipherBytes.Length; i++)
+        {
+            cipherBytes[i] = Convert.ToByte(cipherText.Substring(i * 2, 2), 16);
+        }
+        
+        var plainBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
         return Encoding.UTF8.GetString(plainBytes);
     }
 

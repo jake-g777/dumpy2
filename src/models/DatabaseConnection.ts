@@ -11,30 +11,29 @@ export interface DatabaseConnection {
 }
 
 export interface DatabaseConnectionRequest {
-  request: {
-    connectionName: string;
-    databaseType: string;
-    encryptedHostName: string;
-    portId: number;
-    encryptedServiceName: string;
-    encryptedUsername: string;
-    encryptedPassword: string;
-    sslRequired: boolean;
-    optionsJson?: string;
-  }
+  connectionName: string;
+  databaseType: string;
+  encryptedHostName: string;
+  portId: number;
+  encryptedServiceName: string;
+  encryptedUsername: string;
+  encryptedPassword: string;
+  sslRequired: boolean;
+  optionsJson?: string;
 }
 
 export interface DatabaseConnectionResponse {
   dbInfoId: number;
+  duUserId: number;
   connectionName: string;
-  databaseType: string;
-  hostName: string;
-  portId: number;
-  serviceName: string;
+  type: string;
+  host: string;
+  port: number;
+  database: string;
   username: string;
   password: string;
-  sslRequired: 'Y' | 'N';
-  optionsJson?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  ssl: boolean;
+  optionsJson: string;
+  createdAt: string;
+  updatedAt: string;
 } 

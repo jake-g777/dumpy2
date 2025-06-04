@@ -14,12 +14,46 @@ namespace DumpyServer.Services
         {
             try
             {
-                string connectionString = $"Server={connection.Host};Port={connection.Port};Database={connection.Database};User={connection.Username};Password={connection.Password};SslMode={(connection.Ssl ? "Required" : "None")};AllowPublicKeyRetrieval=true;";
+                // First try connecting without specifying a database to verify authentication
+                string initialConnectionString = $"Server={connection.Host};Port={connection.Port};User={connection.Username};Password={connection.Password};SslMode={(connection.Ssl ? "Required" : "None")};AllowPublicKeyRetrieval=true;";
                 
-                using (var conn = new MySqlConnection(connectionString))
+                using (var conn = new MySqlConnection(initialConnectionString))
                 {
-                    await conn.OpenAsync();
-                    return new ConnectionResult { Success = true, Message = "MySQL connection successful" };
+                    try
+                    {
+                        await conn.OpenAsync();
+                        
+                        // Get list of available databases
+                        var databases = await GetDatabases(connection);
+                        
+                        // Check if the requested database exists
+                        if (!databases.Contains(connection.Database))
+                        {
+                            return new ConnectionResult 
+                            { 
+                                Success = false, 
+                                Message = $"Database '{connection.Database}' does not exist. Available databases: {string.Join(", ", databases)}",
+                                Details = databases
+                            };
+                        }
+                        
+                        // Database exists, try connecting to it
+                        string finalConnectionString = $"Server={connection.Host};Port={connection.Port};Database={connection.Database};User={connection.Username};Password={connection.Password};SslMode={(connection.Ssl ? "Required" : "None")};AllowPublicKeyRetrieval=true;";
+                        using (var finalConn = new MySqlConnection(finalConnectionString))
+                        {
+                            await finalConn.OpenAsync();
+                            return new ConnectionResult { Success = true, Message = "MySQL connection successful" };
+                        }
+                    }
+                    catch (MySqlException ex) when (ex.Number == 1045) // Access denied
+                    {
+                        return new ConnectionResult 
+                        { 
+                            Success = false, 
+                            Message = "Authentication failed. Please check your username and password.",
+                            Details = ex.ToString()
+                        };
+                    }
                 }
             }
             catch (Exception ex)

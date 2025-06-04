@@ -45,7 +45,10 @@ namespace DumpyServer.Services
                     cmd.Parameters.Add(":portId", OracleDbType.Int32).Value = connection.Port;
                     cmd.Parameters.Add(":serviceName", OracleDbType.Varchar2).Value = connection.Database;
                     cmd.Parameters.Add(":username", OracleDbType.Varchar2).Value = connection.Username;
-                    cmd.Parameters.Add(":password", OracleDbType.Varchar2).Value = connection.Password;
+                    
+                    // The password is already encrypted and in hex format from the frontend
+                    cmd.Parameters.Add(":password", OracleDbType.Raw).Value = Convert.FromHexString(connection.Password);
+                    
                     cmd.Parameters.Add(":sslRequired", OracleDbType.Char).Value = connection.Ssl ? 'Y' : 'N';
                     cmd.Parameters.Add(":optionsJson", OracleDbType.Clob).Value = connection.OptionsJson ?? (object)DBNull.Value;
 
@@ -93,7 +96,7 @@ namespace DumpyServer.Services
                                 Port = reader.GetInt32(reader.GetOrdinal("PORT_ID")),
                                 Database = reader.GetString(reader.GetOrdinal("SERVICE_NAME")),
                                 Username = reader.GetString(reader.GetOrdinal("USERNAME")),
-                                Password = reader.GetString(reader.GetOrdinal("PASSWORD")),
+                                Password = BitConverter.ToString((byte[])reader.GetValue(reader.GetOrdinal("PASSWORD"))).Replace("-", ""),
                                 Ssl = reader.GetString(reader.GetOrdinal("SSL_REQUIRED"))[0] == 'Y',
                                 OptionsJson = reader.IsDBNull(reader.GetOrdinal("OPTIONS_JSON")) 
                                     ? string.Empty 
@@ -140,6 +143,57 @@ namespace DumpyServer.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error deleting database connection {connectionId}");
+                throw;
+            }
+        }
+
+        public async Task<DatabaseConnection> UpdateConnectionAsync(DatabaseConnection connection)
+        {
+            try
+            {
+                using (var conn = new OracleConnection(_connectionString))
+                {
+                    await conn.OpenAsync();
+
+                    var cmd = new OracleCommand(
+                        @"UPDATE DB_INFO 
+                          SET CONNECTION_NAME = :connectionName,
+                              DATABASE_TYPE = :databaseType,
+                              HOST_NAME = :hostName,
+                              PORT_ID = :portId,
+                              SERVICE_NAME = :serviceName,
+                              USERNAME = :username,
+                              PASSWORD = :password,
+                              SSL_REQUIRED = :sslRequired,
+                              OPTIONS_JSON = :optionsJson,
+                              UPDATED_AT = SYSDATE
+                          WHERE DB_INFO_ID = :connectionId 
+                          AND DU_USER_ID = :userId", conn);
+
+                    cmd.Parameters.Add(":connectionName", OracleDbType.Varchar2).Value = connection.ConnectionName;
+                    cmd.Parameters.Add(":databaseType", OracleDbType.Varchar2).Value = connection.Type;
+                    cmd.Parameters.Add(":hostName", OracleDbType.Varchar2).Value = connection.Host;
+                    cmd.Parameters.Add(":portId", OracleDbType.Int32).Value = connection.Port;
+                    cmd.Parameters.Add(":serviceName", OracleDbType.Varchar2).Value = connection.Database;
+                    cmd.Parameters.Add(":username", OracleDbType.Varchar2).Value = connection.Username;
+                    cmd.Parameters.Add(":password", OracleDbType.Raw).Value = Convert.FromHexString(connection.Password);
+                    cmd.Parameters.Add(":sslRequired", OracleDbType.Char).Value = connection.Ssl ? 'Y' : 'N';
+                    cmd.Parameters.Add(":optionsJson", OracleDbType.Clob).Value = connection.OptionsJson ?? (object)DBNull.Value;
+                    cmd.Parameters.Add(":connectionId", OracleDbType.Int32).Value = connection.DbInfoId;
+                    cmd.Parameters.Add(":userId", OracleDbType.Int32).Value = connection.DuUserId;
+
+                    var result = await cmd.ExecuteNonQueryAsync();
+                    if (result == 0)
+                    {
+                        throw new Exception("Connection not found or user not authorized");
+                    }
+
+                    return connection;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating database connection {connection.DbInfoId}");
                 throw;
             }
         }

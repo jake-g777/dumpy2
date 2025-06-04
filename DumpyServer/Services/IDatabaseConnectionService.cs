@@ -7,5 +7,6 @@ namespace DumpyServer.Services
         Task<DatabaseConnection> CreateConnectionAsync(DatabaseConnection connection);
         Task<IEnumerable<DatabaseConnection>> GetUserConnectionsAsync(int userId);
         Task DeleteConnectionAsync(int connectionId, int userId);
+        Task<DatabaseConnection> UpdateConnectionAsync(DatabaseConnection connection);
     }
 } 

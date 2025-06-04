@@ -14,15 +14,18 @@ namespace DumpyServer.Controllers
         private readonly IDatabaseConnectionService _dbConnectionService;
         private readonly IUserService _userService;
         private readonly ILogger<DatabaseConnectionController> _logger;
+        private readonly IEncryptionService _encryptionService;
 
         public DatabaseConnectionController(
             IDatabaseConnectionService dbConnectionService,
             IUserService userService,
-            ILogger<DatabaseConnectionController> logger)
+            ILogger<DatabaseConnectionController> logger,
+            IEncryptionService encryptionService)
         {
             _dbConnectionService = dbConnectionService;
             _userService = userService;
             _logger = logger;
+            _encryptionService = encryptionService;
         }
 
         [HttpPost]
@@ -49,10 +52,10 @@ namespace DumpyServer.Controllers
                     DuUserId = (int)user.DumpyUsersId,
                     ConnectionName = request.ConnectionName,
                     Type = request.DatabaseType,
-                    Host = request.EncryptedHostName,
+                    Host = _encryptionService.Decrypt(request.EncryptedHostName),
                     Port = request.PortId,
-                    Database = request.EncryptedServiceName,
-                    Username = request.EncryptedUsername,
+                    Database = _encryptionService.Decrypt(request.EncryptedServiceName),
+                    Username = _encryptionService.Decrypt(request.EncryptedUsername),
                     Password = request.EncryptedPassword,
                     Ssl = request.SslRequired,
                     OptionsJson = request.OptionsJson
@@ -121,21 +124,79 @@ namespace DumpyServer.Controllers
         {
             try
             {
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (string.IsNullOrEmpty(userIdClaim))
+                _logger.LogInformation($"Received delete request for connection {connectionId}");
+                
+                var firebaseId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(firebaseId))
                 {
-                    return Unauthorized("User ID not found");
+                    _logger.LogWarning("Firebase ID not found in token");
+                    return Unauthorized(new { error = "User ID not found" });
                 }
-                var userId = int.Parse(userIdClaim);
-                _logger.LogInformation($"Deleting database connection {connectionId} for user {userId}");
 
-                await _dbConnectionService.DeleteConnectionAsync(connectionId, userId);
-                return Ok();
+                _logger.LogInformation($"Found Firebase ID: {firebaseId}");
+
+                var user = await _userService.GetUserByFirebaseIdAsync(firebaseId);
+                if (user == null)
+                {
+                    _logger.LogWarning($"User not found for Firebase ID: {firebaseId}");
+                    return Unauthorized(new { error = "User not found" });
+                }
+
+                _logger.LogInformation($"Found user with ID: {user.DumpyUsersId}");
+
+                await _dbConnectionService.DeleteConnectionAsync(connectionId, (int)user.DumpyUsersId);
+                _logger.LogInformation($"Successfully deleted connection {connectionId} for user {user.DumpyUsersId}");
+                
+                return Ok(new { message = "Connection deleted successfully" });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error deleting database connection {connectionId}");
-                return StatusCode(500, "An error occurred while deleting the database connection");
+                return StatusCode(500, new { error = "An error occurred while deleting the database connection", details = ex.Message });
+            }
+        }
+
+        [HttpPut("{connectionId}")]
+        public async Task<IActionResult> UpdateConnection(int connectionId, [FromBody] DatabaseConnectionRequest request)
+        {
+            try
+            {
+                var firebaseId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(firebaseId))
+                {
+                    return Unauthorized(new { error = "User ID not found" });
+                }
+
+                var user = await _userService.GetUserByFirebaseIdAsync(firebaseId);
+                if (user == null)
+                {
+                    return Unauthorized(new { error = "User not found" });
+                }
+
+                _logger.LogInformation($"Updating database connection {connectionId} for user {user.DumpyUsersId}");
+
+                var connection = new DatabaseConnection
+                {
+                    DbInfoId = connectionId,
+                    DuUserId = (int)user.DumpyUsersId,
+                    ConnectionName = request.ConnectionName,
+                    Type = request.DatabaseType,
+                    Host = _encryptionService.Decrypt(request.EncryptedHostName),
+                    Port = request.PortId,
+                    Database = _encryptionService.Decrypt(request.EncryptedServiceName),
+                    Username = _encryptionService.Decrypt(request.EncryptedUsername),
+                    Password = request.EncryptedPassword,
+                    Ssl = request.SslRequired,
+                    OptionsJson = request.OptionsJson
+                };
+
+                var result = await _dbConnectionService.UpdateConnectionAsync(connection);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error updating database connection {connectionId}");
+                return StatusCode(500, new { error = "An error occurred while updating the database connection", details = ex.Message });
             }
         }
     }
