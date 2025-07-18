@@ -6,6 +6,7 @@ import { parse, isValid, format } from 'date-fns';
 import DateFormatCorrector from './modals/DateFormatCorrector';
 import EmptyValueDeleter from './modals/EmptyValueDeleter';
 import DatabaseModal from './DatabaseModal';
+import GridLayout from './GridLayout';
 import * as XLSX from 'xlsx';
 //import { readFile } from './utils/fileUtils';
 //import { extractJsonPaths } from './utils/jsonUtils';
@@ -641,6 +642,52 @@ const DataImporter: React.FC<DataImporterProps> = ({
     });
   };
 
+  const removeColumn = (columnIndex: number) => {
+    if (!parsedData) return;
+    
+    const newHeaders = parsedData.headers.filter((_, index) => index !== columnIndex);
+    const newRows = parsedData.rows.map(row => row.filter((_, index) => index !== columnIndex));
+    
+    setParsedData({
+      ...parsedData,
+      headers: newHeaders,
+      rows: newRows
+    });
+  };
+
+  const renameColumn = (columnIndex: number, newName: string) => {
+    if (!parsedData) return;
+    
+    const newHeaders = [...parsedData.headers];
+    newHeaders[columnIndex] = newName;
+    
+    setParsedData({
+      ...parsedData,
+      headers: newHeaders
+    });
+  };
+
+  const reorderColumns = (fromIndex: number, toIndex: number) => {
+    if (!parsedData) return;
+    
+    const newHeaders = [...parsedData.headers];
+    const [movedHeader] = newHeaders.splice(fromIndex, 1);
+    newHeaders.splice(toIndex, 0, movedHeader);
+    
+    const newRows = parsedData.rows.map(row => {
+      const newRow = [...row];
+      const [movedCell] = newRow.splice(fromIndex, 1);
+      newRow.splice(toIndex, 0, movedCell);
+      return newRow;
+    });
+    
+    setParsedData({
+      ...parsedData,
+      headers: newHeaders,
+      rows: newRows
+    });
+  };
+
   const generateSql = () => {
     if (!parsedData) return;
     // Generate SQL based on the parsed data
@@ -729,285 +776,47 @@ const DataImporter: React.FC<DataImporterProps> = ({
         {/* Data Grid */}
         {parsedData && (
           <div className="flex-1 flex flex-col">
-            <div className="h-[calc(100vh-22rem)] overflow-hidden">
-              <div className="shadow-lg border border-gray-700 rounded-none bg-gray-900 h-full flex flex-col">
-                <div className="overflow-x-auto">
-                  <div className="inline-block min-w-full align-middle">
-                    <table className="min-w-full divide-y divide-gray-700">
-                      <thead className="bg-gray-800 sticky top-0 z-10">
-                        <tr>
-                          {isEditMode && (
-                            <th className="w-10 px-2 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider relative group bg-gray-800 border-b border-gray-600 border-r border-gray-600">
-                              <span className="sr-only">Delete</span>
-                            </th>
-                          )}
-                          <th colSpan={parsedData.rows[0]?.length || parsedData.headers.length} className="px-6 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider border-b border-gray-600">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                {rawData && initialFile && (
-                                  <div className="flex items-center text-xs text-gray-400">
-                                    <FileUp className="w-3 h-3 mr-1" />
-                                    <span>{initialFile.name}</span>
-                                  </div>
-                                )}
-                                {rawData && rawData.rows.length > 0 && (
-                                  <div className="relative" ref={headerMenuRef}>
-                                    <button
-                                      onClick={() => setShowHeaderMenu(!showHeaderMenu)}
-                                      className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-none"
-                                    >
-                                      <ArrowUpDown className="w-3 h-3 mr-1" />
-                                      Set Header Row
-                                      <ChevronDown className="w-3 h-3 ml-1" />
-                                    </button>
-                                    {showHeaderMenu && (
-                                      <div className="absolute left-0 mt-1 w-48 rounded-none shadow-lg bg-gray-900 ring-1 ring-gray-700 z-50">
-                                        <div className="py-1" role="menu">
-                                          {rawData.rows.slice(0, 10).map((row, index) => (
-                                            <button
-                                              key={index}
-                                              onClick={() => {
-                                                parseDataWithHeaderRow(rawData.rows, index);
-                                                setSelectedHeaderRow(index);
-                                                setShowHeaderMenu(false);
-                                              }}
-                                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-800 flex items-center justify-between ${
-                                                selectedHeaderRow === index ? 'bg-gray-800 text-white font-medium' : 'text-gray-300'
-                                              }`}
-                                              role="menuitem"
-                                            >
-                                              <span className="truncate mr-2">Row {index + 1}</span>
-                                              <span className="text-xs text-gray-400 truncate">
-                                                {row.slice(0, 3).join(', ')}...
-                                              </span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {parsedData && (
-                                  <button
-                                    onClick={() => {
-                                      setShowEmptyValueDeleter(true);
-                                      setSelectedColumnForEmptyDeletion('');
-                                    }}
-                                    className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-none"
-                                  >
-                                    <Trash2 className="w-3 h-3 mr-1" />
-                                    Delete Empty Values
-                                  </button>
-                                )}
-                                {parsedData && (
-                                  <button
-                                    onClick={() => {
-                                      setShowDateFormatCorrector(true);
-                                      setSelectedColumnForDateCorrection(null);
-                                    }}
-                                    className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-none"
-                                  >
-                                    <Calendar className="w-3 h-3 mr-1" />
-                                    Format Dates
-                                  </button>
-                                )}
-                                {parsedData && (
-                                  <button
-                                    onClick={() => setShowAuditLogs(true)}
-                                    className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-none"
-                                  >
-                                    <History className="w-3 h-3 mr-1" />
-                                    Audit Logs
-                                  </button>
-                                )}
-                                <div className="relative" ref={exportMenuRef}>
-                                  <button
-                                    onClick={() => setShowExportMenu(!showExportMenu)}
-                                    className="inline-flex items-center px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-700 rounded-none"
-                                  >
-                                    <Download className="w-3 h-3 mr-1" />
-                                    Export
-                                    <ChevronDown className="w-3 h-3 ml-1" />
-                                  </button>
-                                  {showExportMenu && (
-                                    <div className="absolute left-0 mt-1 w-48 rounded-none shadow-lg bg-gray-900 ring-1 ring-gray-700 z-10">
-                                      <div className="py-1" role="menu">
-                                        <button
-                                          onClick={() => {
-                                            handleExport('csv');
-                                            setShowExportMenu(false);
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 flex items-center"
-                                          role="menuitem"
-                                        >
-                                          <Download className="w-4 h-4 mr-2" />
-                                          Export as CSV
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            handleExport('json');
-                                            setShowExportMenu(false);
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 flex items-center"
-                                          role="menuitem"
-                                        >
-                                          <Download className="w-4 h-4 mr-2" />
-                                          Export as JSON
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              {parsedData && (
-                                <button
-                                  onClick={() => setIsEditMode(!isEditMode)}
-                                  className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-none transition-all duration-200 ${
-                                    isEditMode 
-                                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md scale-105' 
-                                      : 'text-gray-200 hover:text-white hover:bg-gray-700 border-2 border-transparent hover:border-blue-500'
-                                  }`}
-                                >
-                                  <Edit2 className={`w-3 h-3 mr-1 ${isEditMode ? 'animate-pulse' : ''}`} />
-                                  {isEditMode ? 'Exit Edit Mode' : 'Edit Grid'}
-                                </button>
-                              )}
-                            </div>
-                          </th>
-                        </tr>
-                        <tr>
-                          {isEditMode && (
-                            <th className="w-10 px-2 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider relative group bg-gray-800 border-b border-gray-600 border-r border-gray-600">
-                              <span className="sr-only">Delete</span>
-                            </th>
-                          )}
-                          {parsedData.headers.map((header, index) => (
-                            <th
-                              key={index}
-                              className="px-4 py-3 text-left text-xs font-medium text-gray-200 uppercase tracking-wider relative group bg-gray-800 border-b border-gray-600 border-r border-gray-600 last:border-r-0"
-                              draggable={!editingHeader}
-                              onDragStart={() => !editingHeader && handleColumnDragStart(index)}
-                              onDragOver={(e) => !editingHeader && handleColumnDragOver(e, index)}
-                              onDragEnd={handleGridDragEnd}
-                              style={{ 
-                                minWidth: '150px',
-                                cursor: 'move'
-                              }}
-                            >
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => sortRowsByColumn(index)}
-                                    className={`p-1 hover:bg-gray-700 rounded-none ${
-                                      sortState.column === index ? 'text-blue-400' : 'text-gray-400'
-                                    }`}
-                                    title={`Sort ${sortState.column === index ? 
-                                      sortState.direction === 'asc' ? 'descending' : 
-                                      sortState.direction === 'desc' ? 'reset' : 'ascending' 
-                                      : 'ascending'}`}
-                                  >
-                                    <ArrowUpDown className="w-3 h-3" />
-                                  </button>
-                                  {editingHeader?.index === index ? (
-                                    <input
-                                      type="text"
-                                      value={editingHeader.value}
-                                      onChange={(e) => setEditingHeader({ ...editingHeader, value: e.target.value })}
-                                      onBlur={saveHeaderEdit}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          saveHeaderEdit();
-                                        } else if (e.key === 'Escape') {
-                                          setEditingHeader(null);
-                                        }
-                                      }}
-                                      className="flex-1 px-2 py-1 text-sm border border-gray-600 rounded-none focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-700 text-gray-100"
-                                      autoFocus
-                                    />
-                                  ) : (
-                                    <span className="truncate font-medium">
-                                      {header.trim() ? header : 'Empty Header'}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-gray-900 divide-y divide-gray-700 overflow-y-auto">
-                        {parsedData.rows.map((row: string[], rowIndex: number) => (
-                          <tr key={rowIndex} className="group">
-                            {isEditMode && (
-                              <td className="w-10 px-2">
-                                <button
-                                  onClick={() => removeRow(rowIndex)}
-                                  className="p-1 hover:bg-gray-800 rounded-none"
-                                  title="Delete row"
-                                >
-                                  <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-400" />
-                                </button>
-                              </td>
-                            )}
-                            {row.map((cell: string, cellIndex: number) => (
-                              <td
-                                key={cellIndex}
-                                className="px-4 py-2 whitespace-nowrap text-sm text-gray-300 border-r border-gray-700 last:border-r-0"
-                                style={{ 
-                                  minWidth: '150px',
-                                  width: columnWidths[cellIndex] ? `${columnWidths[cellIndex]}px` : undefined
-                                }}
-                              >
-                                {cell}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Pagination Footer */}
-            <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2 flex items-center justify-between">
-              <div className="flex items-center">
-                <label className="mr-2 text-sm text-gray-700 dark:text-gray-300">Rows per page:</label>
-                <select
-                  value={rowsPerPage}
-                  onChange={handleRowsPerPageChange}
-                  className="rounded border-gray-300 dark:border-gray-600 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                >
-                  {[5, 10, 25, 50, 100].map(value => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                  <option value={-1}>All</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
-                  Page {currentPage} of {Math.ceil(parsedData.rows.length / rowsPerPage)}
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="inline-flex items-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(parsedData.rows.length / rowsPerPage)))}
-                    disabled={currentPage === Math.ceil(parsedData.rows.length / rowsPerPage)}
-                    className="inline-flex items-center rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+            {/* Grid Layout Component */}
+            <div className="h-[calc(100vh-22rem)] overflow-visible">
+              <GridLayout
+                headers={parsedData.headers}
+                rows={parsedData.rows}
+                isEditMode={isEditMode}
+                sortState={sortState}
+                onSort={sortRowsByColumn}
+                onRemoveRow={removeRow}
+                onRemoveColumn={removeColumn}
+                onRenameColumn={renameColumn}
+                onReorderColumns={reorderColumns}
+                currentPage={currentPage}
+                rowsPerPage={rowsPerPage}
+                onPageChange={setCurrentPage}
+                onRowsPerPageChange={setRowsPerPage}
+                onEditModeToggle={() => setIsEditMode(!isEditMode)}
+                onExport={handleExport}
+                onShowAuditLogs={() => setShowAuditLogs(true)}
+                onShowDeleteEmpty={() => {
+                  setShowEmptyValueDeleter(true);
+                  setSelectedColumnForEmptyDeletion('');
+                }}
+                onShowFormatDates={() => {
+                  setShowDateFormatCorrector(true);
+                  setSelectedColumnForDateCorrection(null);
+                }}
+                fileName={initialFile?.name}
+                error={error || undefined}
+                rawData={rawData || undefined}
+                selectedHeaderRow={selectedHeaderRow || undefined}
+                onSetHeaderRow={(headerRowIndex) => {
+                  if (rawData) {
+                    parseDataWithHeaderRow(rawData.rows, headerRowIndex);
+                    setSelectedHeaderRow(headerRowIndex);
+                  }
+                }}
+                showHeaderMenu={showHeaderMenu}
+                onToggleHeaderMenu={() => setShowHeaderMenu(!showHeaderMenu)}
+                headerMenuRef={headerMenuRef}
+              />
             </div>
           </div>
         )}

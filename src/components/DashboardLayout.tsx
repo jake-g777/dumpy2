@@ -832,7 +832,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="Home"
               >
                 <Home size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   Home
                 </span>
               </button>
@@ -850,7 +850,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="Pipelines"
               >
                 <GitBranch size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   Pipelines
                 </span>
               </button>
@@ -863,7 +863,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="Active Jobs"
               >
                 <FileUp size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   Active Jobs
                 </span>
               </button>
@@ -881,7 +881,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="Database Connections"
               >
                 <Database size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   Database Connections
                 </span>
               </button>
@@ -894,7 +894,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="API Connections"
               >
                 <Link2 size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   API Connections
                 </span>
               </button>
@@ -910,7 +910,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="Settings"
               >
                 <Settings size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   Settings
                 </span>
               </button>
@@ -922,7 +922,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = () => {
                 title="Support"
               >
                 <HelpCircle size={16} />
-                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap`}>
+                <span className={`absolute left-full ml-2 px-2 py-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-900'} text-white text-xs rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none`}>
                   Support
                 </span>
               </button>

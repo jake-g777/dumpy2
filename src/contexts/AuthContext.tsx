@@ -69,6 +69,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error("Error setting auth persistence:", error);
       });
 
+
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log("Auth state changed:", user ? "User logged in" : "No user");
       setUser(user);
@@ -136,13 +138,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Firebase Auth is not initialized');
       }
 
-      // Set custom parameters for the Google sign-in
-      provider.setCustomParameters({
-        prompt: 'select_account',
-        response_type: 'token',
-        include_granted_scopes: 'true'
-      });
-
       const result = await signInWithPopup(auth, provider);
       
       if (!result.user) {
@@ -150,6 +145,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       console.log("Google sign in successful:", result.user);
+      console.log("User details:", {
+        uid: result.user.uid,
+        email: result.user.email,
+        displayName: result.user.displayName,
+        emailVerified: result.user.emailVerified
+      });
       
       // Save user data to backend
       await saveUserToBackend(result.user);
