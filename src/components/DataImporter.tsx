@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Download, FileWarning, Trash2, GripVertical, X, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Globe2, FileUp, ChevronDown, History, ChevronUp, Database, Code, Server, Table, Loader2, AlertCircle, Copy, CheckCircle, Calendar, GitBranch } from 'lucide-react';
+import { Upload, Download, FileWarning, Trash2, GripVertical, X, Edit2, ArrowUpDown, ChevronLeft, ChevronRight, Globe2, FileUp, ChevronDown, History, ChevronUp, Database, Code, Server, Table, Loader2, AlertCircle, Copy, CheckCircle, Calendar, GitBranch, RefreshCw } from 'lucide-react';
 import FileImport from './FileImport';
 import Papa from 'papaparse';
 import { parse, isValid, format } from 'date-fns';
@@ -8,6 +8,8 @@ import EmptyValueDeleter from './modals/EmptyValueDeleter';
 import DatabaseModal from './DatabaseModal';
 import GridLayout from './GridLayout';
 import * as XLSX from 'xlsx';
+import { DatabaseConnectionService } from '../services/DatabaseConnectionService';
+import { useAuth } from '../contexts/AuthContext';
 //import { readFile } from './utils/fileUtils';
 //import { extractJsonPaths } from './utils/jsonUtils';
 //import { parseFileData } from './utils/csvUtils';
@@ -478,6 +480,8 @@ const DataImporter: React.FC<DataImporterProps> = ({
   const [isValidating, setIsValidating] = useState(false);
   const [hasValidated, setHasValidated] = useState(false);
   const [columnWidths, setColumnWidths] = useState<{ [key: number]: number }>({});
+  const { databaseUserId } = useAuth();
+  const [isRefreshingConnections, setIsRefreshingConnections] = useState(false);
 
   // Update state when initialData changes
   useEffect(() => {
@@ -770,6 +774,37 @@ const DataImporter: React.FC<DataImporterProps> = ({
     setCurrentPage(1);
   };
 
+  const handleRefreshConnections = async () => {
+    if (!databaseUserId) {
+      console.error('No database user ID available');
+      return;
+    }
+    
+    setIsRefreshingConnections(true);
+    try {
+      console.log('Refreshing connections for user:', databaseUserId);
+      const connections = await DatabaseConnectionService.getConnections(databaseUserId);
+      console.log('Refreshed connections:', connections);
+      
+      if (!connections || connections.length === 0) {
+        console.log('No connections found');
+        return;
+      }
+
+      // If the database modal is open, update its connections
+      if (showDatabaseModal) {
+        // You might need to add a prop to DatabaseModal to handle connection updates
+        // For now, we'll just close and reopen the modal to refresh
+        setShowDatabaseModal(false);
+        setTimeout(() => setShowDatabaseModal(true), 100);
+      }
+    } catch (error) {
+      console.error('Failed to refresh database connections:', error);
+    } finally {
+      setIsRefreshingConnections(false);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="h-full w-full flex flex-col space-y-4">
@@ -825,25 +860,39 @@ const DataImporter: React.FC<DataImporterProps> = ({
         <div className="bg-gray-900 border border-gray-700 rounded-none p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {dataOperations.map((operation) => (
-              <button
-                key={operation.id}
-                onClick={() => {
-                  if (operation.id === 'database') {
-                    setShowDatabaseModal(true);
-                  }
-                }}
-                className="flex flex-col items-start p-4 bg-gray-800 border border-gray-700 rounded-none hover:border-blue-500 hover:bg-gray-750 transition-all group"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="text-blue-400 group-hover:text-blue-300 transition-colors">
-                    {operation.icon}
+              <div key={operation.id} className="relative">
+                <button
+                  onClick={() => {
+                    if (operation.id === 'database') {
+                      setShowDatabaseModal(true);
+                    }
+                  }}
+                  className="w-full flex flex-col items-start p-4 bg-gray-800 border border-gray-700 rounded-none hover:border-blue-500 hover:bg-gray-750 transition-all group"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="text-blue-400 group-hover:text-blue-300 transition-colors">
+                      {operation.icon}
+                    </div>
+                    <span className="font-medium text-gray-200 group-hover:text-white transition-colors">{operation.name}</span>
                   </div>
-                  <span className="font-medium text-gray-200 group-hover:text-white transition-colors">{operation.name}</span>
-                </div>
-                <p className="text-sm text-gray-400 group-hover:text-gray-300 text-left transition-colors">
-                  {operation.description}
-                </p>
-              </button>
+                  <p className="text-sm text-gray-400 group-hover:text-gray-300 text-left transition-colors">
+                    {operation.description}
+                  </p>
+                </button>
+                {operation.id === 'database' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRefreshConnections();
+                    }}
+                    disabled={isRefreshingConnections}
+                    className="absolute top-2 right-2 p-1 text-gray-400 hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Refresh Database Connections"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshingConnections ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>

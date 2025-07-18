@@ -5,6 +5,7 @@ import databaseService from '../services/databaseService';
 import { DatabaseConnectionService } from '../services/DatabaseConnectionService';
 import { useAuth } from '../contexts/AuthContext';
 import { DatabaseConnection as BackendDatabaseConnection, DatabaseConnectionResponse } from '../models/DatabaseConnection';
+import { EncryptionService } from '../services/EncryptionService';
 
 export interface DatabaseConnectionInput {
   type: DatabaseType;
@@ -117,6 +118,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
   const { user, databaseUserId } = useAuth();
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [connections, setConnections] = useState<FrontendDatabaseConnection[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [editingConnection, setEditingConnection] = useState<FrontendDatabaseConnection | null>(null);
@@ -133,7 +135,50 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
   const [showDatabaseTypeDropdown, setShowDatabaseTypeDropdown] = useState(false);
   const sqlPreviewRef = useRef<HTMLDivElement>(null);
   const initialLoadDone = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingConnection, setDeletingConnection] = useState<FrontendDatabaseConnection | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
+  // Add useEffect to fetch connections on mount
+  useEffect(() => {
+    const fetchConnections = async () => {
+      if (!databaseUserId) return;
+      
+      setIsLoading(true);
+      try {
+        const userConnections = await DatabaseConnectionService.getConnections(databaseUserId);
+        console.log('Fetched connections:', userConnections);
+        
+        const transformedConnections = userConnections.map((conn: DatabaseConnectionResponse) => {
+          const transformed = {
+            id: conn.dbInfoId?.toString() || '',
+            name: conn.connectionName || '',
+            type: (conn.type?.toLowerCase() || 'mysql') as DatabaseType,
+            host: conn.host || '',
+            port: conn.port || 0,
+            database: conn.database || '',
+            username: conn.username || '',
+            password: conn.password || '',
+            ssl: conn.ssl === true,
+            status: 'untested' as const
+          };
+          console.log('Transformed connection:', transformed);
+          return transformed;
+        });
+        
+        setConnections(transformedConnections);
+      } catch (error) {
+        console.error('Failed to fetch connections:', error);
+        addLog('Failed to fetch database connections', 'error');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchConnections();
+  }, [databaseUserId]);
+
   const [newConnection, setNewConnection] = useState<DatabaseConnectionFormState>({
     type: 'mysql' as const,
     host: '',
@@ -146,7 +191,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
     showAllDatabases: false
   });
 
-  const databaseTypes = [
+  const databaseTypes: { value: DatabaseType; label: string }[] = [
     { value: 'mysql', label: 'MySQL' },
     { value: 'sqlserver', label: 'SQL Server' },
     { value: 'oracle', label: 'Oracle' }
@@ -158,45 +203,6 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     setIsDarkMode(prefersDark);
   }, []);
-
-  // Load connections from secure storage on mount
-  useEffect(() => {
-    const loadConnections = async () => {
-      if (initialLoadDone.current) return;
-      initialLoadDone.current = true;
-
-      try {
-        if (!databaseUserId) {
-          addLog('No database user ID available', 'error');
-          return;
-        }
-
-        addLog('Loading database connections...', 'info');
-        const userConnections = await DatabaseConnectionService.getConnections(databaseUserId);
-        
-        // Transform the backend connection format to match the frontend format
-        const transformedConnections = userConnections.map((conn: DatabaseConnectionResponse) => ({
-          id: conn.dbInfoId.toString(),
-          name: conn.connectionName,
-          type: conn.databaseType.toLowerCase() as DatabaseType,
-          host: conn.hostName,
-          port: conn.portId,
-          database: conn.serviceName,
-          username: conn.username,
-          password: conn.password,
-          ssl: conn.sslRequired === 'Y',
-          status: 'untested' as const
-        }));
-        
-        setConnections(transformedConnections);
-        addLog('Database connections loaded successfully', 'success');
-      } catch (error) {
-        console.error('Failed to load connections:', error);
-        addLog('Failed to load database connections', 'error');
-      }
-    };
-    loadConnections();
-  }, [databaseUserId]);
 
   // Save connections to secure storage when updated
   useEffect(() => {
@@ -229,53 +235,51 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
 
   // Handle edit button click
   const handleEditClick = (connection: FrontendDatabaseConnection) => {
-    setEditingConnection(connection);
-    setNewConnection({
+    console.log('Original connection data:', connection);
+    
+    const formData = {
       ...connection,
       showAllDatabases: connection.database.toLowerCase() === 'mysql'
-    });
+    };
+
+    console.log('Form data being set:', formData);
+
+    setEditingConnection(connection);
+    setNewConnection(formData);
     setShowModal(true);
   };
 
   const handleSaveConnection = async () => {
-    setSavingConnection(true);
+    if (!newConnection.name || !newConnection.host || !newConnection.database) {
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      // Validate required fields
-      if (!newConnection.name || !newConnection.host || (!newConnection.database && !newConnection.showAllDatabases)) {
-        addLog('Please fill in all required fields', 'error');
-        return;
-      }
-
-      if (!databaseUserId) {
-        addLog('No database user ID available', 'error');
-        return;
-      }
-
-      // Transform the frontend connection format to match the backend format
       const connectionData: BackendDatabaseConnection = {
-        connectionName: newConnection.name,
-        databaseType: newConnection.type.toUpperCase(),
+        connectionName: newConnection.name.trim(),
+        databaseType: newConnection.type,
         hostName: newConnection.host,
         portId: newConnection.port,
-        serviceName: newConnection.showAllDatabases ? 'mysql' : newConnection.database,
+        serviceName: newConnection.database,
         username: newConnection.username,
         password: newConnection.password,
-        sslRequired: newConnection.ssl ? 'Y' : 'N',
+        sslRequired: newConnection.ssl,
         optionsJson: undefined
       };
 
       if (editingConnection) {
         // Update existing connection
-        await DatabaseConnectionService.saveConnection({
-          ...connectionData,
-          dbInfoId: parseInt(editingConnection.id)
-        });
+        const updatedConnection = await DatabaseConnectionService.updateConnection(
+          parseInt(editingConnection.id),
+          connectionData
+        );
         
         setConnections(connections.map(conn => 
           conn.id === editingConnection.id ? { 
             ...conn, 
             ...newConnection,
-            database: newConnection.showAllDatabases ? 'mysql' : newConnection.database,
+            database: newConnection.database,
             status: 'untested' as const
           } : conn
         ));
@@ -288,7 +292,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
           ...newConnection,
           id: savedConnection.dbInfoId.toString(),
           name: newConnection.name,
-          database: newConnection.showAllDatabases ? 'mysql' : newConnection.database,
+          database: newConnection.database,
           status: 'untested' as const
         };
         
@@ -301,7 +305,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       addLog(`Failed to save connection: ${errorMessage}`, 'error');
     } finally {
-      setSavingConnection(false);
+      setIsSaving(false);
     }
   };
 
@@ -313,14 +317,26 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
     });
   };
 
-  const handleDeleteConnection = async (id: string) => {
+  const handleDeleteClick = (connection: FrontendDatabaseConnection) => {
+    setDeletingConnection(connection);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingConnection) return;
+
+    setIsDeleting(true);
     try {
-      await DatabaseConnectionService.deleteConnection(parseInt(id));
-      setConnections(connections.filter(conn => conn.id !== id));
-      addLog('Connection deleted successfully', 'success');
+      await DatabaseConnectionService.deleteConnection(parseInt(deletingConnection.id));
+      setConnections(connections.filter(conn => conn.id !== deletingConnection.id));
+      addLog(`Connection "${deletingConnection.name}" deleted successfully`, 'success');
+      setShowDeleteModal(false);
     } catch (error) {
-      addLog('Failed to delete connection', 'error');
       console.error('Error deleting connection:', error);
+      addLog(`Failed to delete connection "${deletingConnection.name}"`, 'error');
+    } finally {
+      setIsDeleting(false);
+      setDeletingConnection(null);
     }
   };
 
@@ -524,15 +540,15 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
       const userConnections = await DatabaseConnectionService.getConnections(databaseUserId);
       
       const transformedConnections = userConnections.map((conn: DatabaseConnectionResponse) => ({
-        id: conn.dbInfoId.toString(),
-        name: conn.connectionName,
-        type: conn.databaseType.toLowerCase() as DatabaseType,
-        host: conn.hostName,
-        port: conn.portId,
-        database: conn.serviceName,
-        username: conn.username,
-        password: conn.password,
-        ssl: conn.sslRequired === 'Y',
+        id: conn.dbInfoId?.toString() || '',
+        name: conn.connectionName || '',
+        type: (conn.type?.toLowerCase() || 'mysql') as DatabaseType,
+        host: conn.host || '',
+        port: conn.port || 0,
+        database: conn.database || '',
+        username: conn.username || '',
+        password: conn.password || '',
+        ssl: conn.ssl === true,
         status: 'untested' as const
       }));
       
@@ -574,7 +590,12 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
       {/* Main Content Area - Scrollable */}
       <div className="flex-1 min-h-0 bg-gray-950">
         <div className="h-full overflow-y-auto p-3">
-          {connections.length === 0 ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mb-4"></div>
+              <p className="text-gray-400 text-lg">Loading databases...</p>
+            </div>
+          ) : connections.length === 0 ? (
             <div className="text-center py-6">
               <Database className="w-12 h-12 text-gray-600 mx-auto mb-2" />
               <p className="text-gray-400">No database connections yet</p>
@@ -654,7 +675,7 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
                             <Settings size={16} />
                           </button>
                           <button
-                            onClick={() => handleDeleteConnection(connection.id)}
+                            onClick={() => handleDeleteClick(connection)}
                             className={`p-1.5 rounded-md ${isDarkMode ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}
                           >
                             <X size={16} />
@@ -727,18 +748,10 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-none p-6 w-[500px] max-h-[90vh] overflow-y-auto border border-gray-700">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-semibold text-gray-200">
-                {editingConnection ? 'Edit Database Connection' : 'Add Database Connection'}
-              </h3>
-              <button
-                onClick={handleCloseModal}
-                className="p-1 hover:bg-gray-800 rounded-none cursor-pointer text-gray-400 hover:text-gray-300"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl relative">
+            <h2 className="text-xl font-semibold mb-4 text-white">
+              {editingConnection ? 'Edit Connection' : 'New Connection'}
+            </h2>
 
             <div className="space-y-4">
               {/* Connection Name */}
@@ -836,32 +849,11 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
                 <div className="flex items-center space-x-2">
                   <input
                     type="text"
-                    value={newConnection.showAllDatabases ? 'mysql' : newConnection.database}
+                    value={newConnection.database}
                     onChange={(e) => setNewConnection({ ...newConnection, database: e.target.value })}
-                    className={`flex-1 px-3 py-2 border border-gray-700 rounded-none focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-gray-800 text-gray-200 placeholder-gray-500 ${
-                      newConnection.showAllDatabases ? 'bg-gray-700 cursor-not-allowed' : ''
-                    }`}
+                    className={`flex-1 px-3 py-2 border border-gray-700 rounded-none focus:outline-none focus:ring-2 focus:ring-cyan-500 bg-gray-800 text-gray-200 placeholder-gray-500`}
                     placeholder={DATABASE_TYPES[newConnection.type].databasePlaceholder}
-                    disabled={newConnection.showAllDatabases}
                   />
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="showAllDatabases"
-                      checked={newConnection.showAllDatabases}
-                      onChange={(e) => {
-                        setNewConnection({
-                          ...newConnection,
-                          showAllDatabases: e.target.checked,
-                          database: e.target.checked ? 'mysql' : newConnection.database
-                        });
-                      }}
-                      className="h-4 w-4 text-cyan-500 focus:ring-cyan-500 border-gray-700 rounded-none bg-gray-800"
-                    />
-                    <label htmlFor="showAllDatabases" className="text-sm text-gray-300">
-                      Show all databases
-                    </label>
-                  </div>
                 </div>
               </div>
 
@@ -917,19 +909,75 @@ const DatabaseConnections: React.FC<DatabaseConnectionsProps> = ({ onConnect = (
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2 mt-6">
+            <div className="flex justify-end space-x-3 mt-6">
               <button
-                onClick={handleCloseModal}
-                className="px-4 py-2 text-gray-300 hover:bg-gray-800 rounded-none"
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+                disabled={isSaving}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveConnection}
-                disabled={savingConnection}
-                className="px-4 py-2 bg-cyan-500 text-white rounded-none hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={!newConnection.name || !newConnection.host || !newConnection.database || isSaving}
+                className="px-4 py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
-                {savingConnection ? 'Saving...' : 'Save Connection'}
+                {isSaving ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  'Save Connection'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && deletingConnection && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md relative">
+            <h2 className="text-xl font-semibold mb-4 text-white">
+              Delete Connection
+            </h2>
+            
+            <p className="text-gray-300 mb-6">
+              Are you sure you want to delete the connection "{deletingConnection.name}"? This action cannot be undone.
+            </p>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingConnection(null);
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isDeleting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete Connection'
+                )}
               </button>
             </div>
           </div>

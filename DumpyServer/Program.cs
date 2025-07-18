@@ -27,7 +27,7 @@ builder.Services.AddScoped<IDbConnection>(sp =>
 
 // Register UserService
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IDatabaseConnectionService, DatabaseConnectionService>();
+builder.Services.AddSingleton<IDatabaseConnectionService, DatabaseConnectionService>();
 
 // Configure CORS
 builder.Services.AddCors(options =>
