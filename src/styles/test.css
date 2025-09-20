@@ -56,7 +56,7 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--text-color);
   line-height: 1.5;
-  background-color: var(--background);
+  background-color: #000000;
 }
 
 html {
@@ -65,7 +65,7 @@ html {
 
 .test-page {
   font-family: var(--font-body);
-  background: linear-gradient(to bottom, var(--color-bg) 50%, #ffffff 50%);
+  background: #000000;
   color: var(--color-text);
   line-height: var(--line-height);
   margin: 0;
@@ -81,10 +81,7 @@ html {
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: url("https://img.freepik.com/premium-photo/white-dust-scratches-black-background_279525-2.jpg?w=640");
-  background-repeat: repeat;
-  opacity: 0.05;
-  mix-blend-mode: screen;
+  background-color: transparent;
   pointer-events: none;
   z-index: 1;
 }
@@ -109,7 +106,7 @@ html {
   z-index: 10;
   overflow: hidden;
   will-change: transform, opacity, filter;
-  background-color: var(--color-bg);
+  background-color: #000000;
 }
 
 .canvas-container {
@@ -171,7 +168,7 @@ canvas#space {
   align-items: center;
   padding: var(--spacing-lg);
   z-index: 20;
-  background-color: var(--color-bg);
+  background-color: #000000;
 }
 
 .additional-content {
@@ -218,7 +215,7 @@ canvas#space {
   position: relative;
   width: 100vw;
   min-height: 100vh;
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
   overflow-x: hidden;
 }
@@ -359,7 +356,7 @@ canvas#space {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: var(--color-bg);
+  background-color: #000000;
   backdrop-filter: none;
   z-index: 100;
 }
@@ -438,7 +435,7 @@ canvas#space {
 
 .features-section {
   padding: calc(var(--spacing-lg) * 2) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -539,7 +536,7 @@ canvas#space {
 
 .process-section {
   padding: calc(var(--spacing-lg) * 2) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
   scroll-margin-top: 100px;
 }
@@ -633,7 +630,7 @@ canvas#space {
 
 .cta-section {
   padding: calc(var(--spacing-lg) * 3) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
   text-align: center;
   scroll-margin-top: 100px;
@@ -722,7 +719,7 @@ canvas#space {
 
 .pricing-section {
   padding: calc(var(--spacing-lg) * 2) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -817,7 +814,7 @@ canvas#space {
 
 .integrations-section {
   padding: calc(var(--spacing-lg) * 2) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
 }
 
@@ -868,7 +865,7 @@ canvas#space {
 
 .testimonials-section {
   padding: calc(var(--spacing-lg) * 2) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
 }
 
@@ -931,7 +928,7 @@ canvas#space {
 
 .faq-section {
   padding: calc(var(--spacing-lg) * 2) var(--spacing-lg);
-  background-color: var(--color-bg);
+  background-color: #000000;
   color: var(--color-text);
   scroll-margin-top: 100px;
 }
@@ -1220,7 +1217,7 @@ canvas#space {
 /* Hero Section */
 .hero-section {
   padding: 8rem 2rem 4rem;
-  background: linear-gradient(to bottom, var(--light-background), var(--background));
+  background: #000000;
   text-align: center;
 }
 
@@ -1297,11 +1294,6 @@ canvas#space {
   background-color: var(--primary-hover);
 }
 
-/* Features Section */
-.features-section {
-  padding: 6rem 2rem;
-  background-color: var(--background);
-}
 
 .section-header {
   text-align: center;
@@ -1357,11 +1349,7 @@ canvas#space {
   color: var(--light-text);
 }
 
-/* Pricing Section */
-.pricing-section {
-  padding: 6rem 2rem;
-  background-color: var(--light-background);
-}
+
 
 .pricing-grid {
   display: grid;
@@ -1482,7 +1470,7 @@ canvas#space {
 /* CTA Section */
 .cta-section {
   padding: 6rem 2rem;
-  background: linear-gradient(to bottom, var(--background), var(--light-background));
+  background: #000000;
   text-align: center;
 }
 
@@ -1623,4 +1611,75 @@ canvas#space {
   .hero-cta .secondary-btn {
     width: 100%;
   }
+} 
+
+/* Hero Animated Box */
+.hero-animated-box {
+  position: relative;
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  border-radius: 2.5rem;
+  background: #101010;
+  box-shadow: 0 8px 48px 0 rgba(0,0,0,0.25), 0 1.5px 8px 0 rgba(0,0,0,0.10);
+  padding: 6rem 2rem;
+  min-height: 700px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero-abstract-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.hero-abstract-bg::before, .hero-abstract-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.7;
+  animation: blobMove 12s infinite alternate ease-in-out;
+}
+
+.hero-abstract-bg::before {
+  width: 420px;
+  height: 420px;
+  left: -120px;
+  top: -80px;
+  background: linear-gradient(120deg, #6366f1 0%, #60a5fa 100%);
+  animation-delay: 0s;
+}
+
+.hero-abstract-bg::after {
+  width: 340px;
+  height: 340px;
+  right: -100px;
+  bottom: -60px;
+  background: linear-gradient(120deg, #f472b6 0%, #facc15 100%);
+  animation-delay: 3s;
+}
+
+@keyframes blobMove {
+  0% {
+    transform: scale(1) translateY(0) translateX(0);
+  }
+  50% {
+    transform: scale(1.15) translateY(30px) translateX(40px);
+  }
+  100% {
+    transform: scale(1) translateY(0) translateX(0);
+  }
+}
+
+.hero-content.relative.z-10 {
+  position: relative;
+  z-index: 2;
 } 
